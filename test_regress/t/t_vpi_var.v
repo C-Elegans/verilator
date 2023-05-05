@@ -28,10 +28,11 @@ extern "C" int mon_check();
    reg          onebit          /*verilator public_flat_rw @(posedge clk) */;
    reg [2:1]    twoone          /*verilator public_flat_rw @(posedge clk) */;
    reg [2:1]    fourthreetwoone[4:3] /*verilator public_flat_rw @(posedge clk) */;
+   reg LONGSTART_a_very_long_name_which_will_get_hashed_a_very_long_name_which_will_get_hashed_a_very_long_name_which_will_get_hashed_a_very_long_name_which_will_get_hashed_LONGEND /*verilator public_flat_rw*/;
 
-   // verilator lint_off LITENDIAN
+   // verilator lint_off ASCRANGE
    reg [0:61]   quads[2:3]      /*verilator public_flat_rw @(posedge clk) */;
-   // verilator lint_on LITENDIAN
+   // verilator lint_on ASCRANGE
 
    reg [31:0]      count        /*verilator public_flat_rd */;
    reg [31:0]      half_count   /*verilator public_flat_rd */;
@@ -95,12 +96,20 @@ extern "C" int mon_check();
    generate
    for (i=1; i<=6; i=i+1) begin : arr
      arr #(.LENGTH(i)) arr();
-   end endgenerate
+   end
+   endgenerate
+
+   genvar k;
+   generate
+   for (k=1; k<=6; k=k+1) begin : subs
+      sub subsub();
+   end
+   endgenerate
 
 endmodule : t
 
 module sub;
-   reg subsig1 /*verilator public_flat_rd*/;
+   reg subsig1 /*verilator public_flat_rw*/;
    reg subsig2 /*verilator public_flat_rd*/;
 `ifdef IVERILOG
    // stop icarus optimizing signals away

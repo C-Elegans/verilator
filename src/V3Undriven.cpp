@@ -6,7 +6,7 @@
 //
 //*************************************************************************
 //
-// Copyright 2004-2022 by Wilson Snyder. This program is free software; you
+// Copyright 2004-2023 by Wilson Snyder. This program is free software; you
 // can redistribute it and/or modify it under the terms of either the GNU
 // Lesser General Public License Version 3 or the Perl Artistic License
 // Version 2.0.
@@ -26,13 +26,17 @@
 #include "config_build.h"
 #include "verilatedos.h"
 
-#include "V3Global.h"
-#include "V3String.h"
 #include "V3Undriven.h"
+
 #include "V3Ast.h"
+#include "V3Global.h"
+#include "V3Stats.h"
+#include "V3String.h"
 
 #include <algorithm>
 #include <vector>
+
+VL_DEFINE_DEBUG_FUNCTIONS;
 
 //######################################################################
 // Class for every variable we may process
@@ -42,10 +46,15 @@ class UndrivenVarEntry final {
     AstVar* const m_varp;  // Variable this tracks
     std::vector<bool> m_wholeFlags;  // Used/Driven on whole vector
     std::vector<bool> m_bitFlags;  // Used/Driven on each subbit
+    const AstAlways* m_alwCombp
+        = nullptr;  // always_comb of var if driven within always_comb, else nullptr
+    const FileLine* m_alwCombFileLinep = nullptr;  // File line of always_comb of var if driven
+                                                   // within always_comb, else nullptr
+    const AstNodeVarRef* m_nodep = nullptr;  // varref if driven, else nullptr
+    const FileLine* m_nodeFileLinep = nullptr;  // File line of varref if driven, else nullptr
+    bool m_underGen = false;  // Under a generate
 
-    enum : uint8_t { FLAG_USED = 0, FLAG_DRIVEN = 1, FLAGS_PER_BIT = 2 };
-
-    VL_DEBUG_FUNC;  // Declare debug()
+    enum : uint8_t { FLAG_USED = 0, FLAG_DRIVEN = 1, FLAG_DRIVEN_ALWCOMB = 2, FLAGS_PER_BIT = 3 };
 
 public:
     // CONSTRUCTORS
@@ -92,7 +101,7 @@ private:
                 if (lsb == msb) {
                     bits += cvtToStr(lsb + bdtypep->lo());
                 } else {
-                    if (bdtypep->littleEndian()) {
+                    if (bdtypep->ascending()) {
                         bits
                             += cvtToStr(lsb + bdtypep->lo()) + ":" + cvtToStr(msb + bdtypep->lo());
                     } else {
@@ -115,6 +124,24 @@ public:
         UINFO(9, "set d[*] " << m_varp->name() << endl);
         m_wholeFlags[FLAG_DRIVEN] = true;
     }
+    void drivenWhole(const AstNodeVarRef* nodep, const FileLine* fileLinep) {
+        drivenWhole();
+        m_nodep = nodep;
+        m_nodeFileLinep = fileLinep;
+    }
+    void drivenAlwaysCombWhole(const AstAlways* alwCombp, const FileLine* fileLinep) {
+        m_wholeFlags[FLAG_DRIVEN_ALWCOMB] = true;
+        m_alwCombp = alwCombp;
+        m_alwCombFileLinep = fileLinep;
+    }
+    void underGenerate() { m_underGen = true; }
+    bool isUnderGen() const { return m_underGen; }
+    bool isDrivenWhole() const { return m_wholeFlags[FLAG_DRIVEN]; }
+    bool isDrivenAlwaysCombWhole() const { return m_wholeFlags[FLAG_DRIVEN_ALWCOMB]; }
+    const AstNodeVarRef* getNodep() const { return m_nodep; }
+    const FileLine* getNodeFileLinep() const { return m_nodeFileLinep; }
+    const AstAlways* getAlwCombp() const { return m_alwCombp; }
+    const FileLine* getAlwCombFileLinep() const { return m_alwCombFileLinep; }
     void usedBit(int bit, int width) {
         UINFO(9, "set u[" << (bit + width - 1) << ":" << bit << "] " << m_varp->name() << endl);
         for (int i = 0; i < width; i++) {
@@ -149,7 +176,20 @@ public:
     void reportViolations() {
         // Combine bits into overall state
         AstVar* const nodep = m_varp;
-        {
+
+        if (nodep->isGenVar()) {  // Genvar
+            if (!nodep->isIfaceRef() && !nodep->isUsedParam() && !unusedMatch(nodep)) {
+                nodep->v3warn(UNUSEDGENVAR, "Genvar is not used: " << nodep->prettyNameQ());
+                nodep->fileline()->modifyWarnOff(V3ErrorCode::UNUSEDGENVAR,
+                                                 true);  // Warn only once
+            }
+        } else if (nodep->isParam()) {  // Parameter
+            if (!nodep->isIfaceRef() && !nodep->isUsedParam() && !unusedMatch(nodep)) {
+                nodep->v3warn(UNUSEDPARAM, "Parameter is not used: " << nodep->prettyNameQ());
+                nodep->fileline()->modifyWarnOff(V3ErrorCode::UNUSEDPARAM,
+                                                 true);  // Warn only once
+            }
+        } else {  // Signal
             bool allU = true;
             bool allD = true;
             bool anyU = m_wholeFlags[FLAG_USED];
@@ -168,13 +208,8 @@ public:
                 anyDnotU |= !used && driv;
                 anynotDU |= !used && !driv;
             }
-            if ((nodep->isGenVar() || nodep->isParam()) && nodep->isUsedParam())
-                allD = allU = true;
             if (allU) m_wholeFlags[FLAG_USED] = true;
             if (allD) m_wholeFlags[FLAG_DRIVEN] = true;
-            const char* const what = nodep->isParam()    ? "parameter"
-                                     : nodep->isGenVar() ? "genvar"
-                                                         : "signal";
             // Test results
             if (nodep->isIfaceRef()) {
                 // For interface top level we don't do any tracking
@@ -186,43 +221,42 @@ public:
                 // UNDRIVEN is considered more serious - as is more likely a bug,
                 // thus undriven+unused bits get UNUSED warnings, as they're not as buggy.
                 if (!unusedMatch(nodep)) {
-                    nodep->v3warn(UNUSED, ucfirst(what) << " is not driven, nor used: "
-                                                        << nodep->prettyNameQ());
-                    nodep->fileline()->modifyWarnOff(V3ErrorCode::UNUSED, true);  // Warn only once
+                    nodep->v3warn(UNUSEDSIGNAL,
+                                  "Signal is not driven, nor used: " << nodep->prettyNameQ());
+                    nodep->fileline()->modifyWarnOff(V3ErrorCode::UNUSEDSIGNAL,
+                                                     true);  // Warn only once
                 }
             } else if (allD && !anyU) {
                 if (!unusedMatch(nodep)) {
-                    nodep->v3warn(UNUSED, ucfirst(what)
-                                              << " is not used: " << nodep->prettyNameQ());
-                    nodep->fileline()->modifyWarnOff(V3ErrorCode::UNUSED, true);  // Warn only once
+                    nodep->v3warn(UNUSEDSIGNAL, "Signal is not used: " << nodep->prettyNameQ());
+                    nodep->fileline()->modifyWarnOff(V3ErrorCode::UNUSEDSIGNAL,
+                                                     true);  // Warn only once
                 }
             } else if (!anyD && allU) {
-                nodep->v3warn(UNDRIVEN, ucfirst(what)
-                                            << " is not driven: " << nodep->prettyNameQ());
+                nodep->v3warn(UNDRIVEN, "Signal is not driven: " << nodep->prettyNameQ());
                 nodep->fileline()->modifyWarnOff(V3ErrorCode::UNDRIVEN, true);  // Warn only once
             } else {
                 // Bits have different dispositions
                 bool setU = false;
                 bool setD = false;
                 if (anynotDU && !unusedMatch(nodep)) {
-                    nodep->v3warn(UNUSED, "Bits of " << what << " are not driven, nor used: "
-                                                     << nodep->prettyNameQ() << bitNames(BN_BOTH));
+                    nodep->v3warn(UNUSEDSIGNAL, "Bits of signal are not driven, nor used: "
+                                                    << nodep->prettyNameQ() << bitNames(BN_BOTH));
                     setU = true;
                 }
                 if (anyDnotU && !unusedMatch(nodep)) {
-                    nodep->v3warn(UNUSED, "Bits of " << what
-                                                     << " are not used: " << nodep->prettyNameQ()
-                                                     << bitNames(BN_UNUSED));
+                    nodep->v3warn(UNUSEDSIGNAL,
+                                  "Bits of signal are not used: " << nodep->prettyNameQ()
+                                                                  << bitNames(BN_UNUSED));
                     setU = true;
                 }
                 if (anyUnotD) {
-                    nodep->v3warn(UNDRIVEN,
-                                  "Bits of " << what << " are not driven: " << nodep->prettyNameQ()
-                                             << bitNames(BN_UNDRIVEN));
+                    nodep->v3warn(UNDRIVEN, "Bits of signal are not driven: "
+                                                << nodep->prettyNameQ() << bitNames(BN_UNDRIVEN));
                     setD = true;
                 }
                 if (setU) {  // Warn only once
-                    nodep->fileline()->modifyWarnOff(V3ErrorCode::UNUSED, true);
+                    nodep->fileline()->modifyWarnOff(V3ErrorCode::UNUSEDSIGNAL, true);
                 }
                 if (setD) {  // Warn only once
                     nodep->fileline()->modifyWarnOff(V3ErrorCode::UNDRIVEN, true);
@@ -235,7 +269,7 @@ public:
 //######################################################################
 // Undriven state, as a visitor of each AstNode
 
-class UndrivenVisitor final : public VNVisitor {
+class UndrivenVisitor final : public VNVisitorConst {
 private:
     // NODE STATE
     // Netlist:
@@ -255,11 +289,10 @@ private:
     const AstAlways* m_alwaysCombp = nullptr;  // Current always if combo, otherwise nullptr
 
     // METHODS
-    VL_DEBUG_FUNC;  // Declare debug()
 
     UndrivenVarEntry* getEntryp(AstVar* nodep, int which_user) {
         if (!(which_user == 1 ? nodep->user1p() : nodep->user2p())) {
-            UndrivenVarEntry* const entryp = new UndrivenVarEntry(nodep);
+            UndrivenVarEntry* const entryp = new UndrivenVarEntry{nodep};
             // UINFO(9," Associate u="<<which_user<<" "<<cvtToHex(this)<<" "<<nodep->name()<<endl);
             m_entryps[which_user].push_back(entryp);
             if (which_user == 1) {
@@ -292,11 +325,11 @@ private:
     }
 
     // VISITORS
-    virtual void visit(AstVar* nodep) override {
+    void visit(AstVar* nodep) override {
         for (int usr = 1; usr < (m_alwaysCombp ? 3 : 2); ++usr) {
             // For assigns and non-combo always, do just usr==1, to look
             // for module-wide undriven etc.
-            // For non-combo always, run both usr==1 for above, and also
+            // For combo always, run both usr==1 for above, and also
             // usr==2 for always-only checks.
             UndrivenVarEntry* const entryp = getEntryp(nodep, usr);
             if (nodep->isNonOutput() || nodep->isSigPublic() || nodep->isSigUserRWPublic()
@@ -311,17 +344,17 @@ private:
             if (nodep->valuep()) entryp->drivenWhole();
         }
         // Discover variables used in bit definitions, etc
-        iterateChildren(nodep);
+        iterateChildrenConst(nodep);
     }
-    virtual void visit(AstArraySel* nodep) override {
+    void visit(AstArraySel* nodep) override {
         // Arrays are rarely constant assigned, so for now we punt and do all entries
-        iterateChildren(nodep);
+        iterateChildrenConst(nodep);
     }
-    virtual void visit(AstSliceSel* nodep) override {
+    void visit(AstSliceSel* nodep) override {
         // Arrays are rarely constant assigned, so for now we punt and do all entries
-        iterateChildren(nodep);
+        iterateChildrenConst(nodep);
     }
-    virtual void visit(AstSel* nodep) override {
+    void visit(AstSel* nodep) override {
         AstNodeVarRef* const varrefp = VN_CAST(nodep->fromp(), NodeVarRef);
         AstConst* const constp = VN_CAST(nodep->lsbp(), Const);
         if (varrefp && constp && !constp->num().isFourState()) {
@@ -342,10 +375,10 @@ private:
             }
         } else {
             // else other varrefs handled as unknown mess in AstVarRef
-            iterateChildren(nodep);
+            iterateChildrenConst(nodep);
         }
     }
-    virtual void visit(AstNodeVarRef* nodep) override {
+    void visit(AstNodeVarRef* nodep) override {
         // Any variable
         if (nodep->access().isWriteOrRW()
             && !VN_IS(nodep, VarXRef)) {  // Ignore interface variables and similar ugly items
@@ -373,12 +406,49 @@ private:
                     UINFO(9, " Full bus.  Entryp=" << cvtToHex(entryp) << endl);
                     warnAlwCombOrder(nodep);
                 }
-                entryp->drivenWhole();
+                if (entryp->isDrivenWhole() && !m_inBBox && !VN_IS(nodep, VarXRef)
+                    && !VN_IS(nodep->dtypep()->skipRefp(), UnpackArrayDType)
+                    && nodep->fileline() != entryp->getNodeFileLinep() && !entryp->isUnderGen()
+                    && entryp->getNodep()) {
+                    if (m_alwaysCombp
+                        && (!entryp->isDrivenAlwaysCombWhole()
+                            || (entryp->isDrivenAlwaysCombWhole()
+                                && m_alwaysCombp != entryp->getAlwCombp()
+                                && m_alwaysCombp->fileline() != entryp->getAlwCombFileLinep()))) {
+                        nodep->v3warn(
+                            MULTIDRIVEN,
+                            "Variable written to in always_comb also written by other process"
+                                << " (IEEE 1800-2017 9.2.2.2): " << nodep->prettyNameQ() << '\n'
+                                << nodep->warnOther() << '\n'
+                                << nodep->warnContextPrimary() << '\n'
+                                << entryp->getNodep()->warnOther()
+                                << "... Location of other write\n"
+                                << entryp->getNodep()->warnContextSecondary());
+                    }
+                    if (!m_alwaysCombp && entryp->isDrivenAlwaysCombWhole()) {
+                        nodep->v3warn(MULTIDRIVEN,
+                                      "Variable also written to in always_comb"
+                                          << " (IEEE 1800-2017 9.2.2.2): " << nodep->prettyNameQ()
+                                          << '\n'
+                                          << nodep->warnOther() << '\n'
+                                          << nodep->warnContextPrimary() << '\n'
+                                          << entryp->getNodep()->warnOther()
+                                          << "... Location of always_comb write\n"
+                                          << entryp->getNodep()->warnContextSecondary());
+                    }
+                }
+                entryp->drivenWhole(nodep, nodep->fileline());
+                if (m_alwaysCombp && entryp->isDrivenAlwaysCombWhole()
+                    && m_alwaysCombp != entryp->getAlwCombp()
+                    && m_alwaysCombp->fileline() == entryp->getAlwCombFileLinep())
+                    entryp->underGenerate();
+                if (m_alwaysCombp)
+                    entryp->drivenAlwaysCombWhole(m_alwaysCombp, m_alwaysCombp->fileline());
             }
             if (m_inBBox || nodep->access().isReadOrRW()
                 || fdrv
                 // Inouts have only isWrite set, as we don't have more
-                // information and operating on module boundry, treat as
+                // information and operating on module boundary, treat as
                 // both read and writing
                 || m_inInoutPin)
                 entryp->usedWhole();
@@ -386,36 +456,36 @@ private:
     }
 
     // Don't know what black boxed calls do, assume in+out
-    virtual void visit(AstSysIgnore* nodep) override {
+    void visit(AstSysIgnore* nodep) override {
         VL_RESTORER(m_inBBox);
         {
             m_inBBox = true;
-            iterateChildren(nodep);
+            iterateChildrenConst(nodep);
         }
     }
 
-    virtual void visit(AstAssign* nodep) override {
+    void visit(AstAssign* nodep) override {
         VL_RESTORER(m_inProcAssign);
         {
             m_inProcAssign = true;
-            iterateChildren(nodep);
+            iterateChildrenConst(nodep);
         }
     }
-    virtual void visit(AstAssignDly* nodep) override {
+    void visit(AstAssignDly* nodep) override {
         VL_RESTORER(m_inProcAssign);
         {
             m_inProcAssign = true;
-            iterateChildren(nodep);
+            iterateChildrenConst(nodep);
         }
     }
-    virtual void visit(AstAssignW* nodep) override {
+    void visit(AstAssignW* nodep) override {
         VL_RESTORER(m_inContAssign);
         {
             m_inContAssign = true;
-            iterateChildren(nodep);
+            iterateChildrenConst(nodep);
         }
     }
-    virtual void visit(AstAlways* nodep) override {
+    void visit(AstAlways* nodep) override {
         VL_RESTORER(m_alwaysCombp);
         {
             AstNode::user2ClearTree();
@@ -425,42 +495,42 @@ private:
             } else {
                 m_alwaysCombp = nullptr;
             }
-            iterateChildren(nodep);
+            iterateChildrenConst(nodep);
             if (nodep->keyword() == VAlwaysKwd::ALWAYS_COMB) UINFO(9, "   Done " << nodep << endl);
         }
     }
 
-    virtual void visit(AstNodeFTask* nodep) override {
+    void visit(AstNodeFTask* nodep) override {
         VL_RESTORER(m_taskp);
         {
             m_taskp = nodep;
-            iterateChildren(nodep);
+            iterateChildrenConst(nodep);
         }
     }
-    virtual void visit(AstPin* nodep) override {
+    void visit(AstPin* nodep) override {
         VL_RESTORER(m_inInoutPin);
         m_inInoutPin = nodep->modVarp()->isInoutish();
-        iterateChildren(nodep);
+        iterateChildrenConst(nodep);
     }
 
     // Until we support tables, primitives will have undriven and unused I/Os
-    virtual void visit(AstPrimitive*) override {}
+    void visit(AstPrimitive*) override {}
 
     // Coverage artifacts etc shouldn't count as a sink
-    virtual void visit(AstCoverDecl*) override {}
-    virtual void visit(AstCoverInc*) override {}
-    virtual void visit(AstCoverToggle*) override {}
-    virtual void visit(AstTraceDecl*) override {}
-    virtual void visit(AstTraceInc*) override {}
+    void visit(AstCoverDecl*) override {}
+    void visit(AstCoverInc*) override {}
+    void visit(AstCoverToggle*) override {}
+    void visit(AstTraceDecl*) override {}
+    void visit(AstTraceInc*) override {}
 
     // iterate
-    virtual void visit(AstConst* nodep) override {}
-    virtual void visit(AstNode* nodep) override { iterateChildren(nodep); }
+    void visit(AstConst* nodep) override {}
+    void visit(AstNode* nodep) override { iterateChildrenConst(nodep); }
 
 public:
     // CONSTRUCTORS
-    explicit UndrivenVisitor(AstNetlist* nodep) { iterate(nodep); }
-    virtual ~UndrivenVisitor() override {
+    explicit UndrivenVisitor(AstNetlist* nodep) { iterateConst(nodep); }
+    ~UndrivenVisitor() override {
         for (UndrivenVarEntry* ip : m_entryps[1]) ip->reportViolations();
         for (int usr = 1; usr < 3; ++usr) {
             for (UndrivenVarEntry* ip : m_entryps[usr]) delete ip;
@@ -474,4 +544,5 @@ public:
 void V3Undriven::undrivenAll(AstNetlist* nodep) {
     UINFO(2, __FUNCTION__ << ": " << endl);
     { UndrivenVisitor{nodep}; }
+    if (v3Global.opt.stats()) V3Stats::statsStage("undriven");
 }

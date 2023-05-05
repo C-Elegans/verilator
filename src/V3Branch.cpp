@@ -6,7 +6,7 @@
 //
 //*************************************************************************
 //
-// Copyright 2003-2022 by Wilson Snyder. This program is free software; you
+// Copyright 2003-2023 by Wilson Snyder. This program is free software; you
 // can redistribute it and/or modify it under the terms of either the GNU
 // Lesser General Public License Version 3 or the Perl Artistic License
 // Version 2.0.
@@ -26,16 +26,19 @@
 #include "config_build.h"
 #include "verilatedos.h"
 
-#include "V3Global.h"
 #include "V3Branch.h"
+
 #include "V3Ast.h"
+#include "V3Global.h"
 
 #include <map>
+
+VL_DEFINE_DEBUG_FUNCTIONS;
 
 //######################################################################
 // Branch state, as a visitor of each AstNode
 
-class BranchVisitor final : public VNVisitor {
+class BranchVisitor final : public VNVisitorConst {
 private:
     // NODE STATE
     // Entire netlist:
@@ -48,7 +51,6 @@ private:
     std::vector<AstCFunc*> m_cfuncsp;  // List of all tasks
 
     // METHODS
-    VL_DEBUG_FUNC;  // Declare debug()
 
     void reset() {
         m_likely = false;
@@ -62,19 +64,19 @@ private:
     }
 
     // VISITORS
-    virtual void visit(AstNodeIf* nodep) override {
+    void visit(AstNodeIf* nodep) override {
         UINFO(4, " IF: " << nodep << endl);
         VL_RESTORER(m_likely);
         VL_RESTORER(m_unlikely);
         {
             // Do if
             reset();
-            iterateAndNextNull(nodep->ifsp());
+            iterateAndNextConstNull(nodep->thensp());
             const int ifLikely = m_likely;
             const int ifUnlikely = m_unlikely;
             // Do else
             reset();
-            iterateAndNextNull(nodep->elsesp());
+            iterateAndNextConstNull(nodep->elsesp());
             const int elseLikely = m_likely;
             const int elseUnlikely = m_unlikely;
             // Compute
@@ -86,19 +88,19 @@ private:
             }  // else leave unknown
         }
     }
-    virtual void visit(AstNodeCCall* nodep) override {
+    void visit(AstNodeCCall* nodep) override {
         checkUnlikely(nodep);
         nodep->funcp()->user1Inc();
-        iterateChildren(nodep);
+        iterateChildrenConst(nodep);
     }
-    virtual void visit(AstCFunc* nodep) override {
+    void visit(AstCFunc* nodep) override {
         checkUnlikely(nodep);
         m_cfuncsp.push_back(nodep);
-        iterateChildren(nodep);
+        iterateChildrenConst(nodep);
     }
-    virtual void visit(AstNode* nodep) override {
+    void visit(AstNode* nodep) override {
         checkUnlikely(nodep);
-        iterateChildren(nodep);
+        iterateChildrenConst(nodep);
     }
 
     // METHODS
@@ -112,10 +114,10 @@ public:
     // CONSTRUCTORS
     explicit BranchVisitor(AstNetlist* nodep) {
         reset();
-        iterateChildren(nodep);
+        iterateChildrenConst(nodep);
         calc_tasks();
     }
-    virtual ~BranchVisitor() override = default;
+    ~BranchVisitor() override = default;
 };
 
 //######################################################################

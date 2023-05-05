@@ -4,7 +4,7 @@
 #
 # This CMake file is meant to be consumed by regression tests.
 #
-# Copyright 2003-2022 by Wilson Snyder. This program is free software; you
+# Copyright 2003-2023 by Wilson Snyder. This program is free software; you
 # can redistribute it and/or modify it under the terms of either the GNU
 # Lesser General Public License Version 3 or the Perl Artistic License
 # Version 2.0.
@@ -12,7 +12,8 @@
 #
 ######################################################################
 
-cmake_minimum_required(VERSION 3.8)
+cmake_minimum_required(VERSION 3.12)
+cmake_policy(SET CMP0074 NEW)
 set(TEST_REQUIRED_VARS NAME CSOURCES OPT_FAST OPT_GLOBAL
                             VERILATOR_ROOT VERILATOR_ARGS
                             VERILATOR_SOURCES SYSTEMC VERBOSE VERILATION)

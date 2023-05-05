@@ -6,7 +6,7 @@
 //
 //*************************************************************************
 //
-// Copyright 2003-2022 by Wilson Snyder. This program is free software; you
+// Copyright 2003-2023 by Wilson Snyder. This program is free software; you
 // can redistribute it and/or modify it under the terms of either the GNU
 // Lesser General Public License Version 3 or the Perl Artistic License
 // Version 2.0.
@@ -27,12 +27,15 @@
 #include "config_build.h"
 #include "verilatedos.h"
 
-#include "V3Global.h"
-#include "V3EmitCBase.h"
 #include "V3CCtors.h"
+
+#include "V3EmitCBase.h"
+#include "V3Global.h"
 
 #include <algorithm>
 #include <list>
+
+VL_DEFINE_DEBUG_FUNCTIONS;
 
 class VCtorType final {
 public:
@@ -43,7 +46,7 @@ private:
 
 public:
     // cppcheck-suppress noExplicitConstructor
-    inline VCtorType(en _e)
+    constexpr VCtorType(en _e)
         : m_e{_e} {}
     bool isClass() const { return m_e == CLASS; }
     bool isCoverage() const { return m_e == COVERAGE; }
@@ -67,7 +70,7 @@ private:
         funcp->slow(!m_type.isClass());  // Only classes construct on fast path
         string preventUnusedStmt;
         if (m_type.isClass()) {
-            funcp->argTypes(EmitCBaseVisitor::symClassVar());
+            funcp->argTypes(EmitCBase::symClassVar());
             preventUnusedStmt = "if (false && vlSymsp) {}  // Prevent unused\n";
         } else if (m_type.isCoverage()) {
             funcp->argTypes("bool first");
@@ -76,7 +79,7 @@ private:
         if (!preventUnusedStmt.empty()) {
             funcp->addStmtsp(new AstCStmt{m_modp->fileline(), preventUnusedStmt});
         }
-        m_modp->addStmtp(funcp);
+        m_modp->addStmtsp(funcp);
         m_numStmts = 0;
         return funcp;
     }
@@ -109,19 +112,98 @@ public:
             rootFuncp->name(m_basename);
             for (AstCFunc* const funcp : m_newFunctions) {
                 AstCCall* const callp = new AstCCall{m_modp->fileline(), funcp};
+                callp->dtypeSetVoid();
                 if (m_type.isClass()) {
                     callp->argTypes("vlSymsp");
                 } else {
                     if (m_type.isCoverage()) callp->argTypes("first");
                     callp->selfPointer("this");
                 }
-                rootFuncp->addStmtsp(callp);
+                rootFuncp->addStmtsp(callp->makeStmt());
             }
         }
     }
 
 private:
     VL_UNCOPYABLE(V3CCtorsBuilder);
+};
+
+//######################################################################
+
+// Link state, as a visitor of each AstNode
+
+class CCtorsVisitor final : public VNVisitor {
+private:
+    // NODE STATE
+
+    // STATE
+    AstNodeModule* m_modp = nullptr;  // Current module
+    AstCFunc* m_cfuncp = nullptr;  // Current function
+    V3CCtorsBuilder* m_varResetp = nullptr;  // Builder of _ctor_var_reset
+
+    // VISITs
+    void visit(AstNodeModule* nodep) override {
+        VL_RESTORER(m_modp);
+        VL_RESTORER(m_varResetp);
+        m_modp = nodep;
+        V3CCtorsBuilder var_reset{nodep, "_ctor_var_reset",
+                                  VN_IS(nodep, Class) ? VCtorType::CLASS : VCtorType::MODULE};
+        // cppcheck-suppress danglingLifetime
+        m_varResetp = &var_reset;
+        iterateChildren(nodep);
+
+        if (v3Global.opt.coverage()) {
+            V3CCtorsBuilder configure_coverage{nodep, "_configure_coverage", VCtorType::COVERAGE};
+            for (AstNode* np = nodep->stmtsp(); np; np = np->nextp()) {
+                if (AstCoverDecl* const coverp = VN_CAST(np, CoverDecl)) {
+                    // ... else we don't have a static VlSym to be able to coverage insert
+                    UASSERT_OBJ(!VN_IS(nodep, Class), coverp,
+                                "CoverDecl should be in class's package, not class itself");
+                    np = coverp->backp();
+                    configure_coverage.add(coverp->unlinkFrBack());
+                }
+            }
+        }
+        if (AstClass* const classp = VN_CAST(nodep, Class)) {
+            AstCFunc* const funcp = new AstCFunc{classp->fileline(), "~", nullptr, ""};
+            funcp->isDestructor(true);
+            funcp->isStatic(false);
+            // If can be referred to by base pointer, need virtual delete
+            funcp->isVirtual(classp->isExtended());
+            funcp->slow(false);
+            classp->addStmtsp(funcp);
+        }
+    }
+
+    void visit(AstCFunc* nodep) override {
+        VL_RESTORER(m_varResetp);
+        VL_RESTORER(m_cfuncp);
+        m_varResetp = nullptr;
+        m_cfuncp = nodep;
+        iterateChildren(nodep);
+    }
+    void visit(AstVar* nodep) override {
+        if (!nodep->isIfaceParent() && !nodep->isIfaceRef() && !nodep->noReset()
+            && !nodep->isParam() && !nodep->isStatementTemp()
+            && !(nodep->basicp()
+                 && (nodep->basicp()->isEvent() || nodep->basicp()->isTriggerVec()))) {
+            if (m_varResetp) {
+                const auto vrefp = new AstVarRef{nodep->fileline(), nodep, VAccess::WRITE};
+                m_varResetp->add(new AstCReset{nodep->fileline(), vrefp});
+            } else if (m_cfuncp) {
+                const auto vrefp = new AstVarRef{nodep->fileline(), nodep, VAccess::WRITE};
+                nodep->addNextHere(new AstCReset{nodep->fileline(), vrefp});
+            }
+        }
+    }
+
+    void visit(AstConstPool*) override {}
+    void visit(AstNode* nodep) override { iterateChildren(nodep); }
+
+public:
+    // CONSTRUCTORS
+    explicit CCtorsVisitor(AstNode* nodep) { iterate(nodep); }
+    ~CCtorsVisitor() override = default;
 };
 
 //######################################################################
@@ -135,7 +217,7 @@ void V3CCtors::evalAsserts() {
     funcp->isLoose(true);
     funcp->slow(false);
     funcp->ifdef("VL_DEBUG");
-    modp->addStmtp(funcp);
+    modp->addStmtsp(funcp);
     for (AstNode* np = modp->stmtsp(); np; np = np->nextp()) {
         if (AstVar* const varp = VN_CAST(np, Var)) {
             if (varp->isPrimaryInish() && !varp->isSc()) {
@@ -148,7 +230,7 @@ void V3CCtors::evalAsserts() {
                         AstVarRef* const vrefp
                             = new AstVarRef{varp->fileline(), varp, VAccess::READ};
                         vrefp->selfPointer("this");
-                        AstNode* newp = vrefp;
+                        AstNodeExpr* newp = vrefp;
                         if (varp->isWide()) {
                             newp = new AstWordSel{
                                 varp->fileline(), newp,
@@ -156,15 +238,14 @@ void V3CCtors::evalAsserts() {
                         }
                         const uint64_t value = VL_MASK_Q(storedWidth) & ~VL_MASK_Q(lastWordWidth);
                         newp = new AstAnd{varp->fileline(), newp,
-                                          new AstConst(varp->fileline(), AstConst::WidthedValue(),
+                                          new AstConst(varp->fileline(), AstConst::WidthedValue{},
                                                        storedWidth, value)};
                         AstNodeIf* const ifp = new AstIf{
                             varp->fileline(), newp,
                             new AstCStmt{varp->fileline(), "Verilated::overWidthError(\""
                                                                + varp->prettyName() + "\");"}};
                         ifp->branchPred(VBranchPred::BP_UNLIKELY);
-                        newp = ifp;
-                        funcp->addStmtsp(newp);
+                        funcp->addStmtsp(ifp);
                     }
                 }
             }
@@ -175,40 +256,6 @@ void V3CCtors::evalAsserts() {
 void V3CCtors::cctorsAll() {
     UINFO(2, __FUNCTION__ << ": " << endl);
     evalAsserts();
-    for (AstNodeModule* modp = v3Global.rootp()->modulesp(); modp;
-         modp = VN_AS(modp->nextp(), NodeModule)) {
-        // Process each module in turn
-        {
-            V3CCtorsBuilder var_reset{modp, "_ctor_var_reset",
-                                      VN_IS(modp, Class) ? VCtorType::CLASS : VCtorType::MODULE};
-
-            for (AstNode* np = modp->stmtsp(); np; np = np->nextp()) {
-                if (AstVar* const varp = VN_CAST(np, Var)) {
-                    if (!varp->isIfaceParent() && !varp->isIfaceRef() && !varp->noReset()
-                        && !varp->isParam()) {
-                        const auto vrefp = new AstVarRef{varp->fileline(), varp, VAccess::WRITE};
-                        var_reset.add(new AstCReset{varp->fileline(), vrefp});
-                    }
-                }
-            }
-        }
-        if (v3Global.opt.coverage()) {
-            V3CCtorsBuilder configure_coverage{modp, "_configure_coverage", VCtorType::COVERAGE};
-            for (AstNode* np = modp->stmtsp(); np; np = np->nextp()) {
-                if (AstCoverDecl* const coverp = VN_CAST(np, CoverDecl)) {
-                    np = coverp->backp();
-                    configure_coverage.add(coverp->unlinkFrBack());
-                }
-            }
-        }
-        if (const AstClass* const classp = VN_CAST(modp, Class)) {
-            AstCFunc* const funcp = new AstCFunc{modp->fileline(), "~", nullptr, ""};
-            funcp->isDestructor(true);
-            funcp->isStatic(false);
-            // If can be referred to by base pointer, need virtual delete
-            funcp->isVirtual(classp->isExtended());
-            funcp->slow(false);
-            modp->addStmtp(funcp);
-        }
-    }
+    { CCtorsVisitor{v3Global.rootp()}; }
+    V3Global::dumpCheckGlobalTree("cctors", 0, dumpTreeLevel() >= 3);
 }

@@ -6,7 +6,7 @@
 //
 //*************************************************************************
 //
-// Copyright 2003-2022 by Wilson Snyder. This program is free software; you
+// Copyright 2003-2023 by Wilson Snyder. This program is free software; you
 // can redistribute it and/or modify it under the terms of either the GNU
 // Lesser General Public License Version 3 or the Perl Artistic License
 // Version 2.0.
@@ -32,17 +32,27 @@
 #include "config_build.h"
 #include "verilatedos.h"
 
-#include "V3Global.h"
 #include "V3LinkJump.h"
+
 #include "V3Ast.h"
+#include "V3AstUserAllocator.h"
+#include "V3Global.h"
 
 #include <algorithm>
 #include <vector>
+
+VL_DEFINE_DEBUG_FUNCTIONS;
 
 //######################################################################
 
 class LinkJumpVisitor final : public VNVisitor {
 private:
+    // NODE STATE
+    //  AstNode::user1()    -> AstJumpLabel*, for this block if endOfIter
+    //  AstNode::user2()    -> AstJumpLabel*, for this block if !endOfIter
+    const VNUser1InUse m_user1InUse;
+    const VNUser2InUse m_user2InUse;
+
     // STATE
     AstNodeModule* m_modp = nullptr;  // Current module
     AstNodeFTask* m_ftaskp = nullptr;  // Current function/task
@@ -53,12 +63,17 @@ private:
     std::vector<AstNodeBlock*> m_blockStack;  // All begin blocks above current node
 
     // METHODS
-    VL_DEBUG_FUNC;  // Declare debug()
-
     AstJumpLabel* findAddLabel(AstNode* nodep, bool endOfIter) {
         // Put label under given node, and if WHILE optionally at end of iteration
         UINFO(4, "Create label for " << nodep << endl);
         if (VN_IS(nodep, JumpLabel)) return VN_AS(nodep, JumpLabel);  // Done
+
+        // Made it previously?  We always jump to the end, so this works out
+        if (endOfIter) {
+            if (nodep->user1p()) return VN_AS(nodep->user1p(), JumpLabel);
+        } else {
+            if (nodep->user2p()) return VN_AS(nodep->user2p(), JumpLabel);
+        }
 
         AstNode* underp = nullptr;
         bool under_and_next = true;
@@ -68,7 +83,7 @@ private:
             underp = VN_AS(nodep, NodeFTask)->stmtsp();
         } else if (VN_IS(nodep, Foreach)) {
             if (endOfIter) {
-                underp = VN_AS(nodep, Foreach)->bodysp();
+                underp = VN_AS(nodep, Foreach)->stmtsp();
             } else {
                 underp = nodep;
                 under_and_next = false;  // IE we skip the entire foreach
@@ -77,10 +92,18 @@ private:
             if (endOfIter) {
                 // Note we jump to end of bodysp; a FOR loop has its
                 // increment under incsp() which we don't skip
-                underp = VN_AS(nodep, While)->bodysp();
+                underp = VN_AS(nodep, While)->stmtsp();
             } else {
                 underp = nodep;
                 under_and_next = false;  // IE we skip the entire while
+            }
+        } else if (AstDoWhile* const dowhilep = VN_CAST(nodep, DoWhile)) {
+            // Handle it the same as AstWhile, because it will be converted to it
+            if (endOfIter) {
+                underp = dowhilep->stmtsp();
+            } else {
+                underp = nodep;
+                under_and_next = false;
             }
         } else {
             nodep->v3fatalSrc("Unknown jump point for break/disable/continue");
@@ -96,8 +119,8 @@ private:
         if (VN_IS(underp, JumpLabel)) {
             return VN_AS(underp, JumpLabel);
         } else {  // Move underp stuff to be under a new label
-            AstJumpBlock* const blockp = new AstJumpBlock(nodep->fileline(), nullptr);
-            AstJumpLabel* const labelp = new AstJumpLabel(nodep->fileline(), blockp);
+            AstJumpBlock* const blockp = new AstJumpBlock{nodep->fileline(), nullptr};
+            AstJumpLabel* const labelp = new AstJumpLabel{nodep->fileline(), blockp};
             blockp->labelp(labelp);
 
             VNRelinker repHandle;
@@ -112,16 +135,34 @@ private:
             // Keep any AstVars under the function not under the new JumpLabel
             for (AstNode *nextp, *varp = underp; varp; varp = nextp) {
                 nextp = varp->nextp();
-                if (VN_IS(varp, Var)) blockp->addPrev(varp->unlinkFrBack());
+                if (VN_IS(varp, Var)) blockp->addHereThisAsNext(varp->unlinkFrBack());
             }
             // Label goes last
             blockp->addEndStmtsp(labelp);
+            if (endOfIter) {
+                nodep->user1p(labelp);
+            } else {
+                nodep->user2p(labelp);
+            }
             return labelp;
         }
     }
+    void addPrefixToBlocksRecurse(AstNode* nodep) {
+        // Add do_while_ prefix to blocks
+        // Used to not have blocks with duplicated names
+        if (AstBegin* const beginp = VN_CAST(nodep, Begin)) {
+            if (beginp->name() != "") beginp->name("__Vdo_while_" + beginp->name());
+        }
+
+        if (nodep->op1p()) addPrefixToBlocksRecurse(nodep->op1p());
+        if (nodep->op2p()) addPrefixToBlocksRecurse(nodep->op2p());
+        if (nodep->op3p()) addPrefixToBlocksRecurse(nodep->op3p());
+        if (nodep->op4p()) addPrefixToBlocksRecurse(nodep->op4p());
+        if (nodep->nextp()) addPrefixToBlocksRecurse(nodep->nextp());
+    }
 
     // VISITORS
-    virtual void visit(AstNodeModule* nodep) override {
+    void visit(AstNodeModule* nodep) override {
         if (nodep->dead()) return;
         VL_RESTORER(m_modp);
         VL_RESTORER(m_modRepeatNum);
@@ -131,12 +172,12 @@ private:
             iterateChildren(nodep);
         }
     }
-    virtual void visit(AstNodeFTask* nodep) override {
+    void visit(AstNodeFTask* nodep) override {
         m_ftaskp = nodep;
         iterateChildren(nodep);
         m_ftaskp = nullptr;
     }
-    virtual void visit(AstNodeBlock* nodep) override {
+    void visit(AstNodeBlock* nodep) override {
         UINFO(8, "  " << nodep << endl);
         VL_RESTORER(m_inFork);
         m_blockStack.push_back(nodep);
@@ -146,46 +187,35 @@ private:
         }
         m_blockStack.pop_back();
     }
-    virtual void visit(AstRepeat* nodep) override {
+    void visit(AstRepeat* nodep) override {
         // So later optimizations don't need to deal with them,
         //    REPEAT(count,body) -> loop=count,WHILE(loop>0) { body, loop-- }
         // Note var can be signed or unsigned based on original number.
-        AstNode* const countp = nodep->countp()->unlinkFrBackWithNext();
-        const string name = string("__Vrepeat") + cvtToStr(m_modRepeatNum++);
+        AstNodeExpr* const countp = nodep->countp()->unlinkFrBackWithNext();
+        const string name = string{"__Vrepeat"} + cvtToStr(m_modRepeatNum++);
         // Spec says value is integral, if negative is ignored
         AstVar* const varp
-            = new AstVar(nodep->fileline(), VVarType::BLOCKTEMP, name, nodep->findSigned32DType());
+            = new AstVar{nodep->fileline(), VVarType::BLOCKTEMP, name, nodep->findSigned32DType()};
         varp->usedLoopIdx(true);
-        m_modp->addStmtp(varp);
-        AstNode* initsp = new AstAssign(
-            nodep->fileline(), new AstVarRef(nodep->fileline(), varp, VAccess::WRITE), countp);
-        AstNode* const decp = new AstAssign(
-            nodep->fileline(), new AstVarRef(nodep->fileline(), varp, VAccess::WRITE),
-            new AstSub(nodep->fileline(), new AstVarRef(nodep->fileline(), varp, VAccess::READ),
-                       new AstConst(nodep->fileline(), 1)));
-        AstNode* const zerosp = new AstConst(nodep->fileline(), AstConst::Signed32(), 0);
-        AstNode* const condp = new AstGtS(
-            nodep->fileline(), new AstVarRef(nodep->fileline(), varp, VAccess::READ), zerosp);
-        AstNode* const bodysp = nodep->bodysp();
+        m_modp->addStmtsp(varp);
+        AstNode* initsp = new AstAssign{
+            nodep->fileline(), new AstVarRef{nodep->fileline(), varp, VAccess::WRITE}, countp};
+        AstNode* const decp = new AstAssign{
+            nodep->fileline(), new AstVarRef{nodep->fileline(), varp, VAccess::WRITE},
+            new AstSub{nodep->fileline(), new AstVarRef{nodep->fileline(), varp, VAccess::READ},
+                       new AstConst{nodep->fileline(), 1}}};
+        AstNodeExpr* const zerosp = new AstConst{nodep->fileline(), AstConst::Signed32{}, 0};
+        AstNodeExpr* const condp = new AstGtS{
+            nodep->fileline(), new AstVarRef{nodep->fileline(), varp, VAccess::READ}, zerosp};
+        AstNode* const bodysp = nodep->stmtsp();
         if (bodysp) bodysp->unlinkFrBackWithNext();
-        AstNode* newp = new AstWhile(nodep->fileline(), condp, bodysp, decp);
+        AstNode* newp = new AstWhile{nodep->fileline(), condp, bodysp, decp};
         initsp = initsp->addNext(newp);
         newp = initsp;
         nodep->replaceWith(newp);
         VL_DO_DANGLING(nodep->deleteTree(), nodep);
     }
-    virtual void visit(AstWait* nodep) override {
-        nodep->v3warn(E_UNSUPPORTED, "Unsupported: wait statements");
-        // Statements we'll just execute immediately; equivalent to if they followed this
-        if (AstNode* const bodysp = nodep->bodysp()) {
-            bodysp->unlinkFrBackWithNext();
-            nodep->replaceWith(bodysp);
-        } else {
-            nodep->unlinkFrBack();
-        }
-        VL_DO_DANGLING(nodep->deleteTree(), nodep);
-    }
-    virtual void visit(AstWhile* nodep) override {
+    void visit(AstWhile* nodep) override {
         // Don't need to track AstRepeat/AstFor as they have already been converted
         VL_RESTORER(m_loopp);
         VL_RESTORER(m_loopInc);
@@ -194,19 +224,38 @@ private:
             m_loopInc = false;
             iterateAndNextNull(nodep->precondsp());
             iterateAndNextNull(nodep->condp());
-            iterateAndNextNull(nodep->bodysp());
+            iterateAndNextNull(nodep->stmtsp());
             m_loopInc = true;
             iterateAndNextNull(nodep->incsp());
         }
     }
-    virtual void visit(AstForeach* nodep) override {
+    void visit(AstDoWhile* nodep) override {
+        // It is converted to AstWhile in this visit method
         VL_RESTORER(m_loopp);
         {
             m_loopp = nodep;
-            iterateAndNextNull(nodep->bodysp());
+            iterateAndNextNull(nodep->condp());
+            iterateAndNextNull(nodep->stmtsp());
+        }
+        AstNodeExpr* const condp = nodep->condp() ? nodep->condp()->unlinkFrBack() : nullptr;
+        AstNode* const bodyp = nodep->stmtsp() ? nodep->stmtsp()->unlinkFrBack() : nullptr;
+        AstWhile* const whilep = new AstWhile{nodep->fileline(), condp, bodyp};
+        nodep->replaceWith(whilep);
+        VL_DO_DANGLING(nodep->deleteTree(), nodep);
+        if (bodyp) {
+            AstNode* const copiedBodyp = bodyp->cloneTree(false);
+            addPrefixToBlocksRecurse(copiedBodyp);
+            whilep->addHereThisAsNext(copiedBodyp);
         }
     }
-    virtual void visit(AstReturn* nodep) override {
+    void visit(AstForeach* nodep) override {
+        VL_RESTORER(m_loopp);
+        {
+            m_loopp = nodep;
+            iterateAndNextNull(nodep->stmtsp());
+        }
+    }
+    void visit(AstReturn* nodep) override {
         iterateChildren(nodep);
         const AstFunc* const funcp = VN_CAST(m_ftaskp, Func);
         if (m_inFork) {
@@ -215,38 +264,38 @@ private:
             return;
         } else if (!m_ftaskp) {
             nodep->v3error("Return isn't underneath a task or function");
-        } else if (funcp && !nodep->lhsp()) {
+        } else if (funcp && !nodep->lhsp() && !funcp->isConstructor()) {
             nodep->v3error("Return underneath a function should have return value");
         } else if (!funcp && nodep->lhsp()) {
             nodep->v3error("Return underneath a task shouldn't have return value");
         } else {
             if (funcp && nodep->lhsp()) {
                 // Set output variable to return value
-                nodep->addPrev(new AstAssign(
+                nodep->addHereThisAsNext(new AstAssign{
                     nodep->fileline(),
-                    new AstVarRef(nodep->fileline(), VN_AS(funcp->fvarp(), Var), VAccess::WRITE),
-                    nodep->lhsp()->unlinkFrBackWithNext()));
+                    new AstVarRef{nodep->fileline(), VN_AS(funcp->fvarp(), Var), VAccess::WRITE},
+                    nodep->lhsp()->unlinkFrBackWithNext()});
             }
             // Jump to the end of the function call
             AstJumpLabel* const labelp = findAddLabel(m_ftaskp, false);
-            nodep->addPrev(new AstJumpGo(nodep->fileline(), labelp));
+            nodep->addHereThisAsNext(new AstJumpGo{nodep->fileline(), labelp});
         }
         nodep->unlinkFrBack();
         VL_DO_DANGLING(pushDeletep(nodep), nodep);
     }
-    virtual void visit(AstBreak* nodep) override {
+    void visit(AstBreak* nodep) override {
         iterateChildren(nodep);
         if (!m_loopp) {
             nodep->v3error("break isn't underneath a loop");
         } else {
             // Jump to the end of the loop
             AstJumpLabel* const labelp = findAddLabel(m_loopp, false);
-            nodep->addNextHere(new AstJumpGo(nodep->fileline(), labelp));
+            nodep->addNextHere(new AstJumpGo{nodep->fileline(), labelp});
         }
         nodep->unlinkFrBack();
         VL_DO_DANGLING(pushDeletep(nodep), nodep);
     }
-    virtual void visit(AstContinue* nodep) override {
+    void visit(AstContinue* nodep) override {
         iterateChildren(nodep);
         if (!m_loopp) {
             nodep->v3error("continue isn't underneath a loop");
@@ -254,12 +303,12 @@ private:
             // Jump to the end of this iteration
             // If a "for" loop then need to still do the post-loop increment
             AstJumpLabel* const labelp = findAddLabel(m_loopp, true);
-            nodep->addNextHere(new AstJumpGo(nodep->fileline(), labelp));
+            nodep->addNextHere(new AstJumpGo{nodep->fileline(), labelp});
         }
         nodep->unlinkFrBack();
         VL_DO_DANGLING(pushDeletep(nodep), nodep);
     }
-    virtual void visit(AstDisable* nodep) override {
+    void visit(AstDisable* nodep) override {
         UINFO(8, "   DISABLE " << nodep << endl);
         iterateChildren(nodep);
         AstNodeBlock* blockp = nullptr;
@@ -270,30 +319,30 @@ private:
                 break;
             }
         }
-        // if (debug() >= 9) { UINFO(0, "\n"); blockp->dumpTree(cout, "  labeli: "); }
+        // if (debug() >= 9) { UINFO(0, "\n"); blockp->dumpTree("-  labeli: "); }
         if (!blockp) {
             nodep->v3error("disable isn't underneath a begin with name: " << nodep->prettyNameQ());
         } else if (AstBegin* const beginp = VN_CAST(blockp, Begin)) {
             // Jump to the end of the named block
             AstJumpLabel* const labelp = findAddLabel(beginp, false);
-            nodep->addNextHere(new AstJumpGo(nodep->fileline(), labelp));
+            nodep->addNextHere(new AstJumpGo{nodep->fileline(), labelp});
         } else {
             nodep->v3warn(E_UNSUPPORTED, "Unsupported: disable fork");
         }
         nodep->unlinkFrBack();
         VL_DO_DANGLING(pushDeletep(nodep), nodep);
-        // if (debug() >= 9) { UINFO(0, "\n"); beginp->dumpTree(cout, "  labelo: "); }
+        // if (debug() >= 9) { UINFO(0, "\n"); beginp->dumpTree("-  labelo: "); }
     }
-    virtual void visit(AstVarRef* nodep) override {
+    void visit(AstVarRef* nodep) override {
         if (m_loopInc && nodep->varp()) nodep->varp()->usedLoopIdx(true);
     }
-    virtual void visit(AstConst*) override {}
-    virtual void visit(AstNode* nodep) override { iterateChildren(nodep); }
+    void visit(AstConst*) override {}
+    void visit(AstNode* nodep) override { iterateChildren(nodep); }
 
 public:
     // CONSTRUCTORS
     explicit LinkJumpVisitor(AstNetlist* nodep) { iterate(nodep); }
-    virtual ~LinkJumpVisitor() override = default;
+    ~LinkJumpVisitor() override = default;
 };
 
 //######################################################################
@@ -302,5 +351,5 @@ public:
 void V3LinkJump::linkJump(AstNetlist* nodep) {
     UINFO(2, __FUNCTION__ << ": " << endl);
     { LinkJumpVisitor{nodep}; }  // Destruct before checking
-    V3Global::dumpCheckGlobalTree("linkjump", 0, v3Global.opt.dumpTreeLevel(__FILE__) >= 3);
+    V3Global::dumpCheckGlobalTree("linkjump", 0, dumpTreeLevel() >= 3);
 }

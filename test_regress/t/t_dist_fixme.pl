@@ -9,6 +9,7 @@ if (!$::Driver) { use FindBin; exec("$FindBin::Bin/bootstrap.pl", @ARGV, $0); di
 # SPDX-License-Identifier: LGPL-3.0-only OR Artistic-2.0
 
 use IO::File;
+use File::Spec::Functions 'catfile';
 
 scenarios(dist => 1);
 
@@ -26,20 +27,13 @@ if (!-r "$root/.git") {
     $files =~ s/\s+/ /g;
     my @batch;
     my $n = 0;
+    my $re = qr/(FIX[M]E|BO[Z]O)/;
     foreach my $file (split /\s+/, $files) {
-        $batch[$n] .= $file . " ";
-        ++$n if (length($batch[$n]) > 10000);
-    }
-
-    foreach my $bfiles (@batch) {
-        my $cmd = "cd $root && grep -n -P '(FIX" . "ME|BO" . "ZO)' $bfiles | sort";
-        my $grep = `$cmd`;
-        if ($grep ne "") {
-            print "$grep\n";
-            foreach my $line (split /\n/, $grep) {
-                print "L $line\n";
-                $names{$1} = 1 if $line =~ /^([^:]+)/;
-            }
+        my $filename = catfile($root, $file);
+        next if !-r $filename;
+        my $wholefile = file_contents($filename);
+        if ($wholefile =~ /$re/) {
+            $names{$file} = 1;
         }
     }
     if (scalar(%names) >= 1) {

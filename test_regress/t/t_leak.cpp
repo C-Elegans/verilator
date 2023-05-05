@@ -8,9 +8,10 @@
 // Version 2.0.
 // SPDX-License-Identifier: LGPL-3.0-only OR Artistic-2.0
 
-#include <cstdlib>
-#include <cstdio>
 #include <verilated.h>
+
+#include <cstdio>
+#include <cstdlib>
 #include VM_PREFIX_INCLUDE
 
 unsigned int main_time = 0;
@@ -47,12 +48,13 @@ long long get_memory_usage() {
 void make_and_destroy() {
 #ifdef VL_NO_LEGACY
     VerilatedContext* contextp = new VerilatedContext;
+    contextp->debug(0);
     VM_PREFIX* topp = new VM_PREFIX{contextp};
 #else
+    Verilated::debug(0);
     VM_PREFIX* topp = new VM_PREFIX;
 #endif
 
-    Verilated::debug(0);
     topp->eval();
     topp->clk = true;
     while (!

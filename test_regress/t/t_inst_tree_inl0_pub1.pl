@@ -16,7 +16,7 @@ my $default_vltmt_threads = $Self->get_default_vltmt_threads();
 compile(
     verilator_flags2 => ['--stats', "$Self->{t_dir}/$Self->{name}.vlt"],
     # Force 3 threads even if we have fewer cores
-    threads => $Self->{vltmt} ? $default_vltmt_threads : 0
+    threads => $Self->{vltmt} ? $default_vltmt_threads : 1
     );
 
 sub checkRelativeRefs {
@@ -42,7 +42,7 @@ if ($Self->{vlt_all}) {
     # We expect to combine sequent functions across multiple instances of
     # l2, l3, l4, l5. If this number drops, please confirm this has not broken.
     file_grep($Self->{stats}, qr/Optimizations, Combined CFuncs\s+(\d+)/i,
-              ($Self->{vltmt} ? 84 : 52));
+              ($Self->{vltmt} ? 85 : 67));
 
     # Everything should use relative references
     checkRelativeRefs("t", 1);

@@ -6,7 +6,7 @@
 //
 //*************************************************************************
 //
-// Copyright 2003-2022 by Wilson Snyder. This program is free software; you
+// Copyright 2003-2023 by Wilson Snyder. This program is free software; you
 // can redistribute it and/or modify it under the terms of either the GNU
 // Lesser General Public License Version 3 or the Perl Artistic License
 // Version 2.0.
@@ -23,15 +23,18 @@
 #include "config_build.h"
 #include "verilatedos.h"
 
-#include "V3Global.h"
 #include "V3VariableOrder.h"
+
 #include "V3Ast.h"
 #include "V3AstUserAllocator.h"
 #include "V3EmitCBase.h"
+#include "V3Global.h"
 #include "V3TSP.h"
 
 #include <algorithm>
 #include <vector>
+
+VL_DEFINE_DEBUG_FUNCTIONS;
 
 //######################################################################
 // Establish mtask variable sort order in mtasks mode
@@ -48,17 +51,17 @@ public:
         : m_mtaskIds(mtaskIds) {  // Cannot be {} or GCC 4.8 false warning
         m_serial = ++s_serialNext;  // Cannot be ()/{} or GCC 4.8 false warning
     }
-    virtual ~VarTspSorter() = default;
+    ~VarTspSorter() override = default;
     // METHODS
-    virtual bool operator<(const TspStateBase& other) const override {
-        return operator<(dynamic_cast<const VarTspSorter&>(other));
+    bool operator<(const TspStateBase& other) const override {
+        return operator<(static_cast<const VarTspSorter&>(other));
     }
     bool operator<(const VarTspSorter& other) const { return m_serial < other.m_serial; }
     const MTaskIdSet& mtaskIds() const { return m_mtaskIds; }
-    virtual int cost(const TspStateBase* otherp) const override {
-        return cost(dynamic_cast<const VarTspSorter*>(otherp));
+    int cost(const TspStateBase* otherp) const override {
+        return cost(static_cast<const VarTspSorter*>(otherp));
     }
-    virtual int cost(const VarTspSorter* otherp) const {
+    int cost(const VarTspSorter* otherp) const {
         int cost = diffs(m_mtaskIds, otherp->m_mtaskIds);
         cost += diffs(otherp->m_mtaskIds, m_mtaskIds);
         return cost;
@@ -115,7 +118,7 @@ class VariableOrder final {
         V3TSP::StateVec states;
         for (const auto& pair : m2v) {
             if (pair.first.empty()) continue;
-            states.push_back(new VarTspSorter(pair.first));
+            states.push_back(new VarTspSorter{pair.first});
         }
 
         // Do the TSP sort
@@ -155,17 +158,18 @@ class VariableOrder final {
                 auto& attributes = m_attributes(varp);
                 // Stratum
                 const int sigbytes = varp->dtypeSkipRefp()->widthAlignBytes();
-                attributes.stratum = (varp->isUsedClock() && varp->widthMin() == 1)   ? 0
-                                     : VN_IS(varp->dtypeSkipRefp(), UnpackArrayDType) ? 8
-                                     : (varp->basicp() && varp->basicp()->isOpaque()) ? 7
-                                     : (varp->isScBv() || varp->isScBigUint())        ? 6
-                                     : (sigbytes == 8)                                ? 5
-                                     : (sigbytes == 4)                                ? 4
-                                     : (sigbytes == 2)                                ? 2
-                                     : (sigbytes == 1)                                ? 1
-                                                                                      : 9;
+                attributes.stratum = (v3Global.opt.hierChild() && varp->isPrimaryIO()) ? 0
+                                     : (varp->isUsedClock() && varp->widthMin() == 1)  ? 1
+                                     : VN_IS(varp->dtypeSkipRefp(), UnpackArrayDType)  ? 9
+                                     : (varp->basicp() && varp->basicp()->isOpaque())  ? 8
+                                     : (varp->isScBv() || varp->isScBigUint())         ? 7
+                                     : (sigbytes == 8)                                 ? 6
+                                     : (sigbytes == 4)                                 ? 5
+                                     : (sigbytes == 2)                                 ? 3
+                                     : (sigbytes == 1)                                 ? 2
+                                                                                       : 10;
                 // Anonymous structure ok
-                attributes.anonOk = EmitCBaseVisitor::isAnonOk(varp);
+                attributes.anonOk = EmitCBase::isAnonOk(varp);
             }
         }
 
@@ -184,14 +188,14 @@ class VariableOrder final {
             for (; it != varps.cend(); ++it) firstp->addNext(*it);
             if (AstNode* const stmtsp = modp->stmtsp()) {
                 stmtsp->unlinkFrBackWithNext();
-                firstp->addNext(stmtsp);
+                AstNode::addNext<AstNode, AstNode>(firstp, stmtsp);
             }
-            modp->addStmtp(firstp);
+            modp->addStmtsp(firstp);
         }
     }
 
 public:
-    static void processModule(AstNodeModule* modp) { VariableOrder().orderModuleVars(modp); }
+    static void processModule(AstNodeModule* modp) { VariableOrder{}.orderModuleVars(modp); }
 };
 
 //######################################################################
@@ -203,5 +207,5 @@ void V3VariableOrder::orderAll() {
          modp = VN_AS(modp->nextp(), NodeModule)) {
         VariableOrder::processModule(modp);
     }
-    V3Global::dumpCheckGlobalTree("variableorder", 0, v3Global.opt.dumpTreeLevel(__FILE__) >= 3);
+    V3Global::dumpCheckGlobalTree("variableorder", 0, dumpTreeLevel() >= 3);
 }

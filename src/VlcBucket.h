@@ -6,7 +6,7 @@
 //
 //*************************************************************************
 //
-// Copyright 2003-2022 by Wilson Snyder. This program is free software; you
+// Copyright 2003-2023 by Wilson Snyder. This program is free software; you
 // can redistribute it and/or modify it under the terms of either the GNU
 // Lesser General Public License Version 3 or the Perl Artistic License
 // Version 2.0.
@@ -96,20 +96,20 @@ public:
     }
     uint64_t popCount() const {
         uint64_t pop = 0;
-        for (uint64_t i = 0; i < m_dataSize; i++) {
-            if (hits(i)) pop++;
+        for (uint64_t i = 0; i < m_dataSize; ++i) {
+            if (hits(i)) ++pop;
         }
         return pop;
     }
     uint64_t dataPopCount(const VlcBuckets& remaining) {
         uint64_t pop = 0;
-        for (uint64_t i = 0; i < m_dataSize; i++) {
-            if (hits(i) && remaining.hits(i)) pop++;
+        for (uint64_t i = 0; i < m_dataSize; ++i) {
+            if (hits(i) && remaining.hits(i)) ++pop;
         }
         return pop;
     }
     void orData(const VlcBuckets& ordata) {
-        for (uint64_t i = 0; i < m_dataSize; i++) {
+        for (uint64_t i = 0; i < m_dataSize; ++i) {
             if (hits(i) && ordata.hits(i)) clearHits(i);
         }
     }

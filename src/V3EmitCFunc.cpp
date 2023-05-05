@@ -6,7 +6,7 @@
 //
 //*************************************************************************
 //
-// Copyright 2003-2022 by Wilson Snyder. This program is free software; you
+// Copyright 2003-2023 by Wilson Snyder. This program is free software; you
 // can redistribute it and/or modify it under the terms of either the GNU
 // Lesser General Public License Version 3 or the Perl Artistic License
 // Version 2.0.
@@ -17,9 +17,10 @@
 #include "config_build.h"
 #include "verilatedos.h"
 
+#include "V3EmitCFunc.h"
+
 #include "V3Global.h"
 #include "V3String.h"
-#include "V3EmitCFunc.h"
 #include "V3TSP.h"
 
 #include <map>
@@ -31,19 +32,13 @@ constexpr int VL_VALUE_STRING_MAX_WIDTH = 8192;
 //######################################################################
 // EmitCFunc
 
-bool EmitCFunc::emitSimpleOk(AstNodeMath* nodep) {
+bool EmitCFunc::emitSimpleOk(AstNodeExpr* nodep) {
     // Can we put out a simple (A + B) instead of VL_ADD_III(A,B)?
     if (nodep->emitSimpleOperator() == "") return false;
     if (nodep->isWide()) return false;
-    if (nodep->op1p()) {
-        if (nodep->op1p()->isWide()) return false;
-    }
-    if (nodep->op2p()) {
-        if (nodep->op2p()->isWide()) return false;
-    }
-    if (nodep->op3p()) {
-        if (nodep->op3p()->isWide()) return false;
-    }
+    if (nodep->op1p() && nodep->op1p()->isWide()) return false;
+    if (nodep->op2p() && nodep->op2p()->isWide()) return false;
+    if (nodep->op3p() && nodep->op3p()->isWide()) return false;
     return true;
 }
 
@@ -143,7 +138,7 @@ void EmitCFunc::emitOpName(AstNode* nodep, const string& format, AstNode* lhsp, 
                 case 'i':
                     COMMA;
                     UASSERT_OBJ(detailp, nodep, "emitOperator() references undef node");
-                    iterateAndNextNull(detailp);
+                    iterateAndNextConstNull(detailp);
                     needComma = true;
                     break;
                 default:
@@ -160,7 +155,7 @@ void EmitCFunc::emitOpName(AstNode* nodep, const string& format, AstNode* lhsp, 
             puts("(");
         } else {
             // Normal text
-            if (isalnum(pos[0])) needComma = true;
+            if (std::isalnum(pos[0])) needComma = true;
             COMMA;
             string s;
             s += pos[0];
@@ -169,30 +164,8 @@ void EmitCFunc::emitOpName(AstNode* nodep, const string& format, AstNode* lhsp, 
     }
 }
 
-// We only do one display at once, so can just use static state
-static struct EmitDispState {
-    string m_format;  // "%s" and text from user
-    std::vector<char> m_argsChar;  // Format of each argument to be printed
-    std::vector<AstNode*> m_argsp;  // Each argument to be printed
-    std::vector<string> m_argsFunc;  // Function before each argument to be printed
-    EmitDispState() { clear(); }
-    void clear() {
-        m_format = "";
-        m_argsChar.clear();
-        m_argsp.clear();
-        m_argsFunc.clear();
-    }
-    void pushFormat(const string& fmt) { m_format += fmt; }
-    void pushFormat(char fmt) { m_format += fmt; }
-    void pushArg(char fmtChar, AstNode* nodep, const string& func) {
-        m_argsChar.push_back(fmtChar);
-        m_argsp.push_back(nodep);
-        m_argsFunc.push_back(func);
-    }
-} emitDispState;
-
 void EmitCFunc::displayEmit(AstNode* nodep, bool isScan) {
-    if (emitDispState.m_format == ""
+    if (m_emitDispState.m_format == ""
         && VN_IS(nodep, Display)) {  // not fscanf etc, as they need to return value
         // NOP
     } else {
@@ -201,7 +174,7 @@ void EmitCFunc::displayEmit(AstNode* nodep, bool isScan) {
         if (const AstFScanF* const dispp = VN_CAST(nodep, FScanF)) {
             isStmt = false;
             puts("VL_FSCANF_IX(");
-            iterate(dispp->filep());
+            iterateConst(dispp->filep());
             puts(",");
         } else if (const AstSScanF* const dispp = VN_CAST(nodep, SScanF)) {
             isStmt = false;
@@ -211,13 +184,13 @@ void EmitCFunc::displayEmit(AstNode* nodep, bool isScan) {
             puts("X(");
             puts(cvtToStr(dispp->fromp()->widthMin()));
             puts(",");
-            iterate(dispp->fromp());
+            iterateConst(dispp->fromp());
             puts(",");
         } else if (const AstDisplay* const dispp = VN_CAST(nodep, Display)) {
             isStmt = true;
             if (dispp->filep()) {
                 puts("VL_FWRITEF(");
-                iterate(dispp->filep());
+                iterateConst(dispp->filep());
                 puts(",");
             } else {
                 puts("VL_WRITEF(");
@@ -227,7 +200,7 @@ void EmitCFunc::displayEmit(AstNode* nodep, bool isScan) {
             puts("VL_SFORMAT_X(");
             puts(cvtToStr(dispp->lhsp()->widthMin()));
             putbs(",");
-            iterate(dispp->lhsp());
+            iterateConst(dispp->lhsp());
             putbs(",");
         } else if (VN_IS(nodep, SFormatF)) {
             isStmt = false;
@@ -235,12 +208,12 @@ void EmitCFunc::displayEmit(AstNode* nodep, bool isScan) {
         } else {
             nodep->v3fatalSrc("Unknown displayEmit node type");
         }
-        ofp()->putsQuoted(emitDispState.m_format);
+        ofp()->putsQuoted(m_emitDispState.m_format);
         // Arguments
-        for (unsigned i = 0; i < emitDispState.m_argsp.size(); i++) {
-            const char fmt = emitDispState.m_argsChar[i];
-            AstNode* const argp = emitDispState.m_argsp[i];
-            const string func = emitDispState.m_argsFunc[i];
+        for (unsigned i = 0; i < m_emitDispState.m_argsp.size(); i++) {
+            const char fmt = m_emitDispState.m_argsChar[i];
+            AstNode* const argp = m_emitDispState.m_argsp[i];
+            const string func = m_emitDispState.m_argsFunc[i];
             if (func != "" || argp) {
                 puts(",");
                 ofp()->indentInc();
@@ -250,7 +223,7 @@ void EmitCFunc::displayEmit(AstNode* nodep, bool isScan) {
                 } else if (argp) {
                     const bool addrof = isScan || (fmt == '@');
                     if (addrof) puts("&(");
-                    iterate(argp);
+                    iterateConst(argp);
                     if (!addrof) emitDatap(argp);
                     if (addrof) puts(")");
                 }
@@ -265,7 +238,7 @@ void EmitCFunc::displayEmit(AstNode* nodep, bool isScan) {
             puts(" ");
         }
         // Prep for next
-        emitDispState.clear();
+        m_emitDispState.clear();
     }
 }
 
@@ -289,7 +262,7 @@ void EmitCFunc::displayArg(AstNode* dispp, AstNode** elistp, bool isScan, const 
         }
         if (argp->widthMin() > 8 && fmtLetter == 'c') {
             // Technically legal, but surely not what the user intended.
-            argp->v3warn(WIDTH, dispp->verilogKwd() << "of %c format of > 8 bit value");
+            argp->v3warn(WIDTHTRUNC, dispp->verilogKwd() << "of %c format of > 8 bit value");
         }
     }
     // string pfmt = "%"+displayFormat(argp, vfmt, fmtLetter)+fmtLetter;
@@ -302,20 +275,20 @@ void EmitCFunc::displayArg(AstNode* dispp, AstNode** elistp, bool isScan, const 
         double dchars = mantissabits / 3.321928094887362 + 1.0;
         if (fmtLetter == 'd') dchars++;  // space for sign
         const int nchars = int(dchars);
-        pfmt = string("%") + cvtToStr(nchars) + fmtLetter;
+        pfmt = string{"%"} + cvtToStr(nchars) + fmtLetter;
     } else {
-        pfmt = string("%") + vfmt + fmtLetter;
+        pfmt = string{"%"} + vfmt + fmtLetter;
     }
-    emitDispState.pushFormat(pfmt);
+    m_emitDispState.pushFormat(pfmt);
     if (!ignore) {
         if (argp->dtypep()->basicp()
             && argp->dtypep()->basicp()->keyword() == VBasicDTypeKwd::STRING) {
             // string in SystemVerilog is std::string in C++ which is not POD
-            emitDispState.pushArg(' ', nullptr, "-1");
+            m_emitDispState.pushArg(' ', nullptr, "-1");
         } else {
-            emitDispState.pushArg(' ', nullptr, cvtToStr(argp->widthMin()));
+            m_emitDispState.pushArg(' ', nullptr, cvtToStr(argp->widthMin()));
         }
-        emitDispState.pushArg(fmtLetter, argp, "");
+        m_emitDispState.pushArg(fmtLetter, argp, "");
         if (fmtLetter == 't' || fmtLetter == '^') {
             const AstSFormatF* fmtp = nullptr;
             if (const AstDisplay* const nodep = VN_CAST(dispp, Display)) {
@@ -328,10 +301,10 @@ void EmitCFunc::displayArg(AstNode* dispp, AstNode** elistp, bool isScan, const 
             UASSERT_OBJ(fmtp, dispp,
                         "Use of %t must be under AstDisplay, AstSFormat, or AstSFormatF");
             UASSERT_OBJ(!fmtp->timeunit().isNone(), fmtp, "timenunit must be set");
-            emitDispState.pushArg(' ', nullptr, cvtToStr((int)fmtp->timeunit().powerOfTen()));
+            m_emitDispState.pushArg(' ', nullptr, cvtToStr((int)fmtp->timeunit().powerOfTen()));
         }
     } else {
-        emitDispState.pushArg(fmtLetter, nullptr, "");
+        m_emitDispState.pushArg(fmtLetter, nullptr, "");
     }
 }
 
@@ -341,7 +314,7 @@ void EmitCFunc::displayNode(AstNode* nodep, AstScopeName* scopenamep, const stri
 
     // Convert Verilog display to C printf formats
     //          "%0t" becomes "%d"
-    emitDispState.clear();
+    m_emitDispState.clear();
     string vfmt;
     string::const_iterator pos = vformat.begin();
     bool inPct = false;
@@ -353,10 +326,10 @@ void EmitCFunc::displayNode(AstNode* nodep, AstScopeName* scopenamep, const stri
             ignore = false;
             vfmt = "";
         } else if (!inPct) {  // Normal text
-            emitDispState.pushFormat(*pos);
+            m_emitDispState.pushFormat(*pos);
         } else {  // Format character
             inPct = false;
-            switch (tolower(pos[0])) {
+            switch (std::tolower(pos[0])) {
             case '0':  // FALLTHRU
             case '1':  // FALLTHRU
             case '2':  // FALLTHRU
@@ -374,7 +347,7 @@ void EmitCFunc::displayNode(AstNode* nodep, AstScopeName* scopenamep, const stri
                 inPct = true;  // Get more digits
                 break;
             case '%':
-                emitDispState.pushFormat("%%");  // We're printf'ing it, so need to quote the %
+                m_emitDispState.pushFormat("%%");  // We're printf'ing it, so need to quote the %
                 break;
             case '*':
                 vfmt += pos[0];
@@ -410,17 +383,17 @@ void EmitCFunc::displayNode(AstNode* nodep, AstScopeName* scopenamep, const stri
                 UASSERT_OBJ(scopenamep, nodep, "Display with %m but no AstScopeName");
                 const string suffix = scopenamep->scopePrettySymName();
                 if (suffix == "") {
-                    emitDispState.pushFormat("%S");
+                    m_emitDispState.pushFormat("%S");
                 } else {
-                    emitDispState.pushFormat("%N");  // Add a . when needed
+                    m_emitDispState.pushFormat("%N");  // Add a . when needed
                 }
-                emitDispState.pushArg(' ', nullptr, "vlSymsp->name()");
-                emitDispState.pushFormat(suffix);
+                m_emitDispState.pushArg(' ', nullptr, "vlSymsp->name()");
+                m_emitDispState.pushFormat(suffix);
                 break;
             }
             case 'l': {
                 // Better than not compiling
-                emitDispState.pushFormat("----");
+                m_emitDispState.pushFormat("----");
                 break;
             }
             default:
@@ -449,17 +422,8 @@ void EmitCFunc::emitCCallArgs(const AstNodeCCall* nodep, const string& selfPoint
         puts(nodep->argTypes());
         comma = true;
     }
-    for (AstNode* subnodep = nodep->argsp(); subnodep; subnodep = subnodep->nextp()) {
-        if (comma) puts(", ");
-        iterate(subnodep);
-        comma = true;
-    }
-    if (VN_IS(nodep->backp(), NodeMath) || VN_IS(nodep->backp(), CReturn)) {
-        // We should have a separate CCall for math and statement usage, but...
-        puts(")");
-    } else {
-        puts(");\n");
-    }
+    putCommaIterateNext(nodep->argsp(), comma);
+    puts(")");
 }
 
 void EmitCFunc::emitDereference(const string& pointer) {
@@ -476,9 +440,9 @@ void EmitCFunc::emitDereference(const string& pointer) {
 
 void EmitCFunc::emitCvtPackStr(AstNode* nodep) {
     if (const AstConst* const constp = VN_CAST(nodep, Const)) {
-        putbs("std::string(");
+        putbs("std::string{");
         putsQuoted(constp->num().toString());
-        puts(")");
+        puts("}");
     } else {
         putbs("VL_CVT_PACK_STR_N");
         emitIQW(nodep);
@@ -488,28 +452,30 @@ void EmitCFunc::emitCvtPackStr(AstNode* nodep) {
             puts(cvtToStr(nodep->widthWords()));
             puts(", ");
         }
-        iterateAndNextNull(nodep);
+        iterateAndNextConstNull(nodep);
         puts(")");
     }
 }
 
 void EmitCFunc::emitCvtWideArray(AstNode* nodep, AstNode* fromp) {
     putbs("VL_CVT_W_A(");
-    iterate(nodep);
+    iterateConst(nodep);
     puts(", ");
-    iterate(fromp);
+    iterateConst(fromp);
     putbs(".atDefault()");  // Not accessed; only to get the proper type of values
     puts(")");
 }
 
 void EmitCFunc::emitConstant(AstConst* nodep, AstVarRef* assigntop, const string& assignString) {
     // Put out constant set to the specified variable, or given variable in a string
-    if (nodep->num().isFourState()) {
+    if (nodep->num().isNull()) {
+        puts("VlNull{}");
+    } else if (nodep->num().isFourState()) {
         nodep->v3warn(E_UNSUPPORTED, "Unsupported: 4-state numbers in this context");
     } else if (nodep->num().isString()) {
-        putbs("std::string(");
+        putbs("std::string{");
         putsQuoted(nodep->num().toString());
-        puts(")");
+        puts("}");
     } else if (nodep->isWide()) {
         int upWidth = nodep->num().widthMin();
         int chunks = 0;
@@ -575,6 +541,12 @@ void EmitCFunc::emitConstant(AstConst* nodep, AstVarRef* assigntop, const string
         if (int(nodep->num().toDouble()) == nodep->num().toDouble()
             && nodep->num().toDouble() < 1000 && nodep->num().toDouble() > -1000) {
             ofp()->printf("%3.1f", nodep->num().toDouble());  // Force decimal point
+        } else if (std::isinf(nodep->num().toDouble())) {
+            if (std::signbit(nodep->num().toDouble())) puts("-");
+            ofp()->puts("std::numeric_limits<double>::infinity()");
+        } else if (std::isnan(nodep->num().toDouble())) {
+            if (std::signbit(nodep->num().toDouble())) puts("-");
+            ofp()->puts("std::numeric_limits<double>::quiet_NaN()");
         } else {
             // Not %g as will not always put in decimal point, so not obvious to compiler
             // is a real number
@@ -612,8 +584,9 @@ void EmitCFunc::emitSetVarConstant(const string& assignString, AstConst* constp)
 
 void EmitCFunc::emitVarReset(AstVar* varp) {
     AstNodeDType* const dtypep = varp->dtypep()->skipRefp();
-    const string varNameProtected
-        = VN_IS(m_modp, Class) ? varp->nameProtect() : "vlSelf->" + varp->nameProtect();
+    const string varNameProtected = (VN_IS(m_modp, Class) || varp->isFuncLocal())
+                                        ? varp->nameProtect()
+                                        : "vlSelf->" + varp->nameProtect();
     if (varp->isIO() && m_modp->isTop() && optSystemC()) {
         // System C top I/O doesn't need loading, as the lower level subinst code does it.}
     } else if (varp->isParam()) {
@@ -622,7 +595,18 @@ void EmitCFunc::emitVarReset(AstVar* varp) {
         // If an ARRAYINIT we initialize it using an initial block similar to a signal
         // puts("// parameter "+varp->nameProtect()+" = "+varp->valuep()->name()+"\n");
     } else if (const AstInitArray* const initarp = VN_CAST(varp->valuep(), InitArray)) {
-        if (AstAssocArrayDType* const adtypep = VN_CAST(dtypep, AssocArrayDType)) {
+        if (VN_IS(dtypep, AssocArrayDType)) {
+            if (initarp->defaultp()) {
+                emitSetVarConstant(varNameProtected + ".atDefault()",
+                                   VN_AS(initarp->defaultp(), Const));
+            }
+            const auto& mapr = initarp->map();
+            for (const auto& itr : mapr) {
+                AstNode* const valuep = itr.second->valuep();
+                emitSetVarConstant(varNameProtected + ".at(" + cvtToStr(itr.first) + ")",
+                                   VN_AS(valuep, Const));
+            }
+        } else if (VN_IS(dtypep, WildcardArrayDType)) {
             if (initarp->defaultp()) {
                 emitSetVarConstant(varNameProtected + ".atDefault()",
                                    VN_AS(initarp->defaultp(), Const));
@@ -635,7 +619,7 @@ void EmitCFunc::emitVarReset(AstVar* varp) {
             }
         } else if (AstUnpackArrayDType* const adtypep = VN_CAST(dtypep, UnpackArrayDType)) {
             if (initarp->defaultp()) {
-                puts("for (int __Vi=0; __Vi<" + cvtToStr(adtypep->elementsConst()));
+                puts("for (int __Vi = 0; __Vi < " + cvtToStr(adtypep->elementsConst()));
                 puts("; ++__Vi) {\n");
                 emitSetVarConstant(varNameProtected + "[__Vi]", VN_AS(initarp->defaultp(), Const));
                 puts("}\n");
@@ -664,8 +648,15 @@ string EmitCFunc::emitVarResetRecurse(const AstVar* varp, const string& varNameP
         const string cvtarray = (adtypep->subDTypep()->isWide() ? ".data()" : "");
         return emitVarResetRecurse(varp, varNameProtected, adtypep->subDTypep(), depth + 1,
                                    suffix + ".atDefault()" + cvtarray);
+    } else if (AstWildcardArrayDType* const adtypep = VN_CAST(dtypep, WildcardArrayDType)) {
+        // Access std::array as C array
+        const string cvtarray = (adtypep->subDTypep()->isWide() ? ".data()" : "");
+        return emitVarResetRecurse(varp, varNameProtected, adtypep->subDTypep(), depth + 1,
+                                   suffix + ".atDefault()" + cvtarray);
     } else if (VN_IS(dtypep, ClassRefDType)) {
         return "";  // Constructor does it
+    } else if (VN_IS(dtypep, IfaceRefDType)) {
+        return varNameProtected + suffix + " = nullptr;\n";
     } else if (const AstDynArrayDType* const adtypep = VN_CAST(dtypep, DynArrayDType)) {
         // Access std::array as C array
         const string cvtarray = (adtypep->subDTypep()->isWide() ? ".data()" : "");
@@ -676,25 +667,48 @@ string EmitCFunc::emitVarResetRecurse(const AstVar* varp, const string& varNameP
         const string cvtarray = (adtypep->subDTypep()->isWide() ? ".data()" : "");
         return emitVarResetRecurse(varp, varNameProtected, adtypep->subDTypep(), depth + 1,
                                    suffix + ".atDefault()" + cvtarray);
+    } else if (VN_IS(dtypep, SampleQueueDType)) {
+        return "";
     } else if (const AstUnpackArrayDType* const adtypep = VN_CAST(dtypep, UnpackArrayDType)) {
         UASSERT_OBJ(adtypep->hi() >= adtypep->lo(), varp,
                     "Should have swapped msb & lsb earlier.");
-        const string ivar = string("__Vi") + cvtToStr(depth);
-        const string pre = ("for (int " + ivar + "=" + cvtToStr(0) + "; " + ivar + "<"
+        const string ivar = string{"__Vi"} + cvtToStr(depth);
+        const string pre = ("for (int " + ivar + " = " + cvtToStr(0) + "; " + ivar + " < "
                             + cvtToStr(adtypep->elementsConst()) + "; ++" + ivar + ") {\n");
         const string below = emitVarResetRecurse(varp, varNameProtected, adtypep->subDTypep(),
                                                  depth + 1, suffix + "[" + ivar + "]");
         const string post = "}\n";
         return below.empty() ? "" : pre + below + post;
+    } else if (VN_IS(dtypep, NodeUOrStructDType) && !VN_AS(dtypep, NodeUOrStructDType)->packed()) {
+        const auto* const sdtypep = VN_AS(dtypep, NodeUOrStructDType);
+        string literal;
+        for (const AstMemberDType* itemp = sdtypep->membersp(); itemp;
+             itemp = VN_AS(itemp->nextp(), MemberDType)) {
+            const std::string line
+                = emitVarResetRecurse(varp, varNameProtected + suffix + "." + itemp->nameProtect(),
+                                      itemp->dtypep(), depth + 1, "");
+            if (!line.empty()) literal += line;
+        }
+        return literal;
     } else if (basicp && basicp->keyword() == VBasicDTypeKwd::STRING) {
         // String's constructor deals with it
+        return "";
+    } else if (basicp && basicp->isForkSync()) {
+        return "";
+    } else if (basicp && basicp->isDelayScheduler()) {
+        return "";
+    } else if (basicp && basicp->isTriggerScheduler()) {
+        return "";
+    } else if (basicp && basicp->isDynamicTriggerScheduler()) {
         return "";
     } else if (basicp) {
         const bool zeroit
             = (varp->attrFileDescr()  // Zero so we don't do file IO if never $fopen
+               || varp->isFuncLocal()  // Randomization too slow
                || (basicp && basicp->isZeroInit())
                || (v3Global.opt.underlineZero() && !varp->name().empty() && varp->name()[0] == '_')
                || (v3Global.opt.xInitial() == "fast" || v3Global.opt.xInitial() == "0"));
+        const bool slow = !varp->isFuncLocal() && !varp->isClassMember();
         splitSizeInc(1);
         if (dtypep->isWide()) {  // Handle unpacked; not basicp->isWide
             string out;
@@ -706,7 +720,7 @@ string EmitCFunc::emitVarResetRecurse(const AstVar* varp, const string& varNameP
                     out += cvtToStr(constp->num().edataWord(w)) + "U;\n";
                 }
             } else {
-                out += zeroit ? "VL_ZERO_RESET_W(" : "VL_RAND_RESET_W(";
+                out += zeroit ? (slow ? "VL_ZERO_RESET_W(" : "VL_ZERO_W(") : "VL_RAND_RESET_W(";
                 out += cvtToStr(dtypep->widthMin());
                 out += ", " + varNameProtected + suffix + ");\n";
             }
@@ -731,81 +745,4 @@ string EmitCFunc::emitVarResetRecurse(const AstVar* varp, const string& varNameP
         v3fatalSrc("Unknown node type in reset generator: " << varp->prettyTypeName());
     }
     return "";
-}
-
-void EmitCFunc::doubleOrDetect(AstChangeDet* changep, bool& gotOne) {
-    // cppcheck-suppress variableScope
-    static int s_addDoubleOr = 10;  // Determined experimentally as best
-    if (!changep->rhsp()) {
-        if (!gotOne) {
-            gotOne = true;
-        } else {
-            puts(" | ");
-        }
-        iterateAndNextNull(changep->lhsp());
-    } else {
-        AstNode* const lhsp = changep->lhsp();
-        AstNode* const rhsp = changep->rhsp();
-        UASSERT_OBJ(VN_IS(lhsp, VarRef) || VN_IS(lhsp, ArraySel), changep, "Not ref?");
-        UASSERT_OBJ(VN_IS(rhsp, VarRef) || VN_IS(rhsp, ArraySel), changep, "Not ref?");
-        for (int word = 0; word < (changep->lhsp()->isWide() ? changep->lhsp()->widthWords() : 1);
-             ++word) {
-            if (!gotOne) {
-                gotOne = true;
-                s_addDoubleOr = 10;
-                puts("(");
-            } else if (--s_addDoubleOr == 0) {
-                puts("|| (");
-                s_addDoubleOr = 10;
-            } else {
-                puts(" | (");
-            }
-            iterateAndNextNull(changep->lhsp());
-            if (changep->lhsp()->isWide()) puts("[" + cvtToStr(word) + "]");
-            if (changep->lhsp()->isDouble()) {
-                puts(" != ");
-            } else {
-                puts(" ^ ");
-            }
-            iterateAndNextNull(changep->rhsp());
-            if (changep->lhsp()->isWide()) puts("[" + cvtToStr(word) + "]");
-            puts(")");
-        }
-    }
-}
-
-void EmitCFunc::emitChangeDet() {
-    putsDecoration("// Change detection\n");
-    puts("QData __req = false;  // Logically a bool\n");  // But not because it results in
-    // faster code
-    bool gotOne = false;
-    for (AstChangeDet* const changep : m_blkChangeDetVec) {
-        if (changep->lhsp()) {
-            if (!gotOne) {  // Not a clocked block
-                puts("__req |= (");
-            } else {
-                puts("\n");
-            }
-            doubleOrDetect(changep, gotOne);
-        }
-    }
-    if (gotOne) puts(");\n");
-    if (gotOne && !v3Global.opt.protectIds()) {
-        // puts("VL_DEBUG_IF( if (__req) cout<<\"- CLOCKREQ );");
-        for (AstChangeDet* nodep : m_blkChangeDetVec) {
-            if (nodep->lhsp()) {
-                puts("VL_DEBUG_IF( if(__req && (");
-                bool gotOneIgnore = false;
-                doubleOrDetect(nodep, gotOneIgnore);
-                string varname;
-                if (VN_IS(nodep->lhsp(), VarRef)) {
-                    varname = ": " + VN_AS(nodep->lhsp(), VarRef)->varp()->prettyName();
-                }
-                puts(")) VL_DBG_MSGF(\"        CHANGE: ");
-                puts(protect(nodep->fileline()->filename()));
-                puts(":" + cvtToStr(nodep->fileline()->lineno()));
-                puts(varname + "\\n\"); );\n");
-            }
-        }
-    }
 }

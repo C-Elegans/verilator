@@ -1,6 +1,7 @@
 # pylint: disable=C0103,C0114,C0116,C0301,E0402,W0622
 #
 # Configuration file for Verilator's Sphinx documentation builder.
+# Copyright 2003-2023 by Wilson Snyder.
 # SPDX-License-Identifier: LGPL-3.0-only OR Artistic-2.0
 #
 # This file only contains overridden options. For a full list:
@@ -9,10 +10,10 @@
 # ----------------------------------------------------------------------
 # -- Path setup
 
-from datetime import datetime
 import os
 import re
 import sys
+
 sys.path.insert(0, os.path.abspath('./_ext'))
 
 import sphinx_rtd_theme  # pylint: disable=wrong-import-position,
@@ -20,12 +21,20 @@ import sphinx_rtd_theme  # pylint: disable=wrong-import-position,
 
 def get_vlt_version():
     filename = "../../Makefile"
-    with open(filename) as fh:
+    with open(filename, "r", encoding="utf8") as fh:
         for line in fh:
-            match = re.search(r"PACKAGE_VERSION_NUMBER *= *([a-z0-9.]+)", line)
+            match = re.search(r"PACKAGE_VERSION *= *([a-z0-9.]+) +([-0-9]+)",
+                              line)
             if match:
-                return match.group(1)
-    return "unknown"
+                return match.group(1), match.group(2)
+            match = re.search(r"PACKAGE_VERSION *= *([a-z0-9.]+) +devel", line)
+            if match:
+                try:
+                    data = os.popen('git log -n 1 --pretty=%cs').read()
+                except Exception:
+                    data = ""  # fallback, and Sphinx will fill in today's date
+                return "Devel " + match.group(1), data
+    return "unknown", "unknown"
 
 
 def setup(app):
@@ -42,8 +51,8 @@ author = 'Wilson Snyder'
 # The master toctree document.
 master_doc = "index"
 
-version = get_vlt_version()
-release = get_vlt_version()
+version, today_fmt = get_vlt_version()
+release = version
 
 rst_prolog = """
 .. role:: vlopt(option)
@@ -86,9 +95,6 @@ source_suffix = [".rst"]
 
 # Add any paths that contain templates here, relative to this directory.
 templates_path = ['_templates']
-
-# Date format to ISO
-today_fmt = datetime.now().strftime("%F")
 
 # If true, `todo` and `todoList` produce output, else they produce nothing.
 todo_include_todos = True

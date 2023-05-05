@@ -6,13 +6,16 @@ Alexandre
 Ami
 Amir
 Anastasiadis
+Anglin
 Anikin
+Antmicro
 Antonin
 Antwerpen
 Arasanipalai
 Arjen
 Asciidoc
 Ashutosh
+Ast
 Atmel
 Aurelien
 Bagri
@@ -40,9 +43,12 @@ Chandan
 Chitlesh
 Christophe
 Cochrane
+Conda
+Corteggiani
 Cuan
 Cygwin
 DErrico
+DFG
 Da
 Danilo
 Dannoritzer
@@ -93,6 +99,7 @@ Fredieu
 GTKWave
 Galbi
 Gantt
+Garnal
 Gartner
 Gelinek
 Geoff
@@ -108,8 +115,10 @@ Goessling
 Gonnen
 Goorah
 Gossner
+Graphviz
 Graybeal
 Grobman
+Grulfen
 Gunter
 Guo
 Hao
@@ -131,6 +140,7 @@ Iles
 Inlines
 Inout
 Iru
+Iyer
 Iztok
 Jacko
 Jae
@@ -157,6 +167,7 @@ Karge
 Karlsson
 Katz
 Katzman
+Kelin
 Keren
 Keyi
 Kimmitt
@@ -181,6 +192,7 @@ Laurens
 Lavino
 Leber
 Leendert
+Lem
 Lesik
 Liland
 Liu
@@ -200,12 +212,14 @@ Matveyenko
 Maupin
 Mdir
 Mednick
+Menküc
 Michiels
 Microsystems
 Milanovic
 Millis
 MinW
 Mindspeed
+MingW
 Miodrag
 ModelSim
 Modport
@@ -215,10 +229,13 @@ Muhlestein
 Multithreaded
 Multithreading
 NOUNOPTFLAT
+NaN
 Nalbantis
 Narayan
+Nassim
 Nauticus
 Newgard
+Nigam
 Nikana
 Niranjan
 Nitza
@@ -233,6 +250,7 @@ Patricio
 Petr
 Piechotka
 Piersall
+Platzer
 Plunkett
 Popolon
 Popov
@@ -247,6 +265,7 @@ Pullup
 Pulver
 Puri
 Questa
+Rachit
 Ralf
 Rapp
 Redhat
@@ -284,6 +303,7 @@ Solomatnikov
 Solt
 Southwell
 Srini
+Srinivasan
 Stamness
 Stephane
 Stoddard
@@ -308,6 +328,7 @@ Thiede
 Thierry
 Thyer
 Tichelaar
+Timi
 Tomov
 Tood
 Topa
@@ -332,6 +353,7 @@ Vdeeptemp
 Vdly
 Vemumtab
 Vemuri
+Venkataramanan
 Veriable
 Verialted
 Verilate
@@ -340,7 +362,9 @@ Verilating
 Verilation
 Verilator
 Verilog
+Vighnesh
 Viktor
+Vilp
 Vm
 Vukobratovic
 Wai
@@ -364,6 +388,7 @@ Xuan
 Xuanqi
 Yazdanbakhsh
 Yi
+Yike
 Yinan
 Yosys
 Yu
@@ -376,6 +401,8 @@ agrobman
 ahouska
 al
 ala
+alejandro
+algrobman
 andit
 ar
 architected
@@ -397,12 +424,13 @@ bbox
 benchmarking
 biguint
 biops
-bitOpTree
+bisonpre
 bitOpTree
 bitop
 bitstoreal
 blackbox
 bokke
+bool
 brancoliticus
 buf
 bufif
@@ -413,6 +441,7 @@ callValueCbs
 casex
 casez
 casted
+castro
 cb
 ccache
 ccall
@@ -436,11 +465,13 @@ commandArgsPlusMatch
 compilable
 concat
 concats
+conf
 config
 const
 constexpr
 constpool
 coredump
+coroutine
 countbits
 countones
 cout
@@ -452,6 +483,7 @@ cutable
 cygwin
 dM
 da
+danbone
 dat
 datadir
 datafiles
@@ -463,6 +495,7 @@ defenv
 defname
 defparam
 demangling
+dep
 der
 dereference
 desassign
@@ -480,6 +513,7 @@ dsvf
 dtor
 dumpall
 dumpfile
+dumpi
 dumplimit
 dumpoff
 dumpon
@@ -492,6 +526,7 @@ dumpportson
 dumpvars
 dut
 dx
+dynarray
 elab
 elike
 elsif
@@ -500,6 +535,7 @@ endcelldefine
 endfunction
 endgenerate
 endian
+endianness
 endif
 endmodule
 endprotect
@@ -521,6 +557,7 @@ exe
 executables
 expr
 extern
+ezchi
 fanin
 fasttrace
 fauto
@@ -537,6 +574,7 @@ filesystem
 filt
 flto
 flushCall
+fno
 fopen
 forceable
 foreach
@@ -564,6 +602,7 @@ genvar
 genvars
 getenv
 getline
+ggdb
 gmake
 gmon
 gotFinish
@@ -577,6 +616,7 @@ hierCMakeArgs
 hierMkArgs
 hierVer
 hx
+hyperthreading
 hyperthreads
 icecream
 idmap
@@ -587,6 +627,7 @@ ifndef
 impot
 incdir
 includer
+incrementing
 inferfaces
 inhibitSim
 initarray
@@ -600,16 +641,19 @@ inouts
 inserted
 instantiation
 instantiations
+intra
 iostream
 ish
 isunbounded
 isunknown
+jobserver
 killua
 lang
 lcov
 ld
 leavinel
 len
+libc
 libext
 libgoogle
 libsystemc
@@ -626,8 +670,11 @@ localparams
 localtime
 logicals
 longint
+lossy
 lsb
+lubc
 lvalue
+lvalues
 lxt
 macromodule
 makefile
@@ -635,6 +682,7 @@ makefiles
 manpages
 metacomment
 metacomments
+miree
 mis
 misconnected
 misconversion
@@ -643,6 +691,7 @@ mk
 mno
 modport
 modports
+mpb
 msg
 msvc
 mtask
@@ -650,12 +699,15 @@ mtasks
 mulithreaded
 mult
 multidim
+multidriven
 multiinterfaces
 multiline
 multipling
+multipoint
 multithread
 multithreaded
 multithreading
+musl
 mutexes
 mux
 myftptoyman
@@ -682,9 +734,11 @@ nullptr
 onehot
 ooo
 oprofile
+ortegon
 oversubscription
 parallelized
 param
+parameterization
 parameterized
 params
 parens
@@ -705,6 +759,8 @@ portlists
 posedge
 posix
 postfix
+postincreemnt
+postincrement
 pragma
 pragmas
 pre
@@ -725,14 +781,17 @@ profiler
 prototyptes
 ps
 pthread
+ptr
 pulldown
 pulldowns
 pullup
 pvalue
 pwd
+py
 qrq
 radix
 randc
+randcase
 rarr
 rdtsc
 reStructuredText
@@ -750,6 +809,7 @@ reloop
 resetall
 respecified
 rodata
+rolloverSize
 rr
 rst
 runtime
@@ -764,6 +824,7 @@ seg
 setuphold
 sformat
 sformatf
+shareefj
 shortint
 shortreal
 signame
@@ -772,6 +833,7 @@ specparam
 splitme
 spp
 sqrt
+srandom
 src
 srcdir
 srcfile
@@ -790,6 +852,7 @@ structs
 subcell
 subcells
 subexpressions
+submakes
 submodule
 submodules
 substring
@@ -802,6 +865,7 @@ svdpi
 swrite
 sys
 systemc
+tenghtt
 testbench
 threadsafe
 threashold
@@ -873,6 +937,7 @@ vlt
 vltstd
 vluint
 vpi
+vpiDefName
 vpiLeftRange
 vpiModule
 vpiSize

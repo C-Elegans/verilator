@@ -6,7 +6,7 @@
 //
 //*************************************************************************
 //
-// Copyright 2003-2022 by Wilson Snyder. This program is free software; you
+// Copyright 2003-2023 by Wilson Snyder. This program is free software; you
 // can redistribute it and/or modify it under the terms of either the GNU
 // Lesser General Public License Version 3 or the Perl Artistic License
 // Version 2.0.
@@ -29,15 +29,26 @@
 #include "verilatedos.h"
 
 // Limited V3 headers here - this is a base class for Vlc etc
-#include "V3String.h"
 #include "V3Os.h"
+#include "V3String.h"
+
+#ifndef V3ERROR_NO_GLOBAL_
+#include "V3Global.h"
+VL_DEFINE_DEBUG_FUNCTIONS;
+#endif
 
 #include <cerrno>
 #include <climits>  // PATH_MAX (especially on FreeBSD)
 #include <cstdarg>
+#ifdef _MSC_VER
+#include <filesystem>  // C++17
+#define PATH_MAX MAX_PATH
+#else
 #include <dirent.h>
+#endif
 #include <fstream>
 #include <memory>
+
 #include <sys/stat.h>
 #include <sys/types.h>
 
@@ -70,24 +81,26 @@
 // Environment
 
 string V3Os::getenvStr(const string& envvar, const string& defaultValue) {
+    string ret = "";
 #if defined(_MSC_VER)
     // Note: MinGW does not offer _dupenv_s
-    const char* const envvalue = nullptr;
-    _dupenv_s(&envvalue, nullptr, envvar.c_str());
+    const char* envvalue = nullptr;
+    _dupenv_s((char**)&envvalue, nullptr, envvar.c_str());
     if (envvalue != nullptr) {
         const std::string result{envvalue};
-        free(envvalue);
-        return result;
+        free((void*)envvalue);
+        ret = result;
     } else {
-        return defaultValue;
+        ret = defaultValue;
     }
 #else
     if (const char* const envvalue = getenv(envvar.c_str())) {
-        return envvalue;
+        ret = envvalue;
     } else {
-        return defaultValue;
+        ret = defaultValue;
     }
 #endif
+    return VString::escapeStringForPath(ret);
 }
 
 void V3Os::setenvStr(const string& envvar, const string& value, const string& why) {
@@ -129,7 +142,7 @@ string V3Os::filenameDir(const string& filename) {
     }
 }
 
-string V3Os::filenameNonDir(const string& filename) {
+string V3Os::filenameNonDir(const string& filename) VL_PURE {
     string::size_type pos;
     if ((pos = filename.rfind('/')) != string::npos) {
         return filename.substr(pos + 1);
@@ -138,7 +151,7 @@ string V3Os::filenameNonDir(const string& filename) {
     }
 }
 
-string V3Os::filenameNonExt(const string& filename) {
+string V3Os::filenameNonExt(const string& filename) VL_PURE {
     string base = filenameNonDir(filename);
     string::size_type pos;
     if ((pos = base.find('.')) != string::npos) base.erase(pos);
@@ -146,7 +159,8 @@ string V3Os::filenameNonExt(const string& filename) {
 }
 
 string V3Os::filenameSubstitute(const string& filename) {
-    string out;
+    string result;
+    // cppcheck-has-bug-suppress unusedLabel
     enum : uint8_t { NONE, PAREN, CURLY } brackets = NONE;
     for (string::size_type pos = 0; pos < filename.length(); ++pos) {
         if ((filename[pos] == '$') && (pos + 1 < filename.length())) {
@@ -159,7 +173,7 @@ string V3Os::filenameSubstitute(const string& filename) {
             string::size_type endpos = pos + 1;
             while (((endpos + 1) < filename.length())
                    && (((brackets == NONE)
-                        && (isalnum(filename[endpos + 1]) || filename[endpos + 1] == '_'))
+                        && (std::isalnum(filename[endpos + 1]) || filename[endpos + 1] == '_'))
                        || ((brackets == CURLY) && (filename[endpos + 1] != '}'))
                        || ((brackets == PAREN) && (filename[endpos + 1] != ')'))))
                 ++endpos;
@@ -172,20 +186,20 @@ string V3Os::filenameSubstitute(const string& filename) {
             string envvalue;
             if (!envvar.empty()) envvalue = getenvStr(envvar, "");
             if (!envvalue.empty()) {
-                out += envvalue;
+                result += envvalue;
                 if (brackets == NONE) {
                     pos = endpos;
                 } else {
                     pos = endpos + 1;
                 }
             } else {
-                out += filename[pos];  // *pos == '$'
+                result += filename[pos];  // *pos == '$'
             }
         } else {
-            out += filename[pos];
+            result += filename[pos];
         }
     }
-    return out;
+    return result;
 }
 
 string V3Os::filenameRealPath(const string& filename) {
@@ -199,7 +213,7 @@ string V3Os::filenameRealPath(const string& filename) {
         realpath(filename.c_str(), retpath)
 #endif
     ) {
-        return string(retpath);
+        return std::string{retpath};
     } else {
         return filename;
     }
@@ -236,10 +250,18 @@ void V3Os::createDir(const string& dirname) {
 }
 
 void V3Os::unlinkRegexp(const string& dir, const string& regexp) {
+#ifdef _MSC_VER
+    for (const auto& dirEntry : std::filesystem::directory_iterator(dir.c_str())) {
+        if (VString::wildmatch(dirEntry.path().filename().string(), regexp.c_str())) {
+            const string fullname = dir + "/" + dirEntry.path().filename().string();
+            _unlink(fullname.c_str());
+        }
+    }
+#else
     if (DIR* const dirp = opendir(dir.c_str())) {
         while (struct dirent* const direntp = readdir(dirp)) {
             if (VString::wildmatch(direntp->d_name, regexp.c_str())) {
-                const string fullname = dir + "/" + string(direntp->d_name);
+                const string fullname = dir + "/" + std::string{direntp->d_name};
 #if defined(_WIN32) || defined(__MINGW32__)
                 _unlink(fullname.c_str());
 #else
@@ -249,6 +271,7 @@ void V3Os::unlinkRegexp(const string& dir, const string& regexp) {
         }
         closedir(dirp);
     }
+#endif
 }
 
 //######################################################################
@@ -263,7 +286,7 @@ uint64_t V3Os::rand64(std::array<uint64_t, 2>& stater) {
     return result;
 }
 
-string V3Os::trueRandom(size_t size) {
+string V3Os::trueRandom(size_t size) VL_MT_SAFE {
     string result(size, '\xFF');
     char* const data = const_cast<char*>(result.data());
     // Note: std::string.data() returns a non-const Char* from C++17 onwards.
@@ -347,7 +370,7 @@ int V3Os::system(const string& command) {
     const int ret = ::system(command.c_str());
     if (VL_UNCOVERABLE(ret == -1)) {
         v3fatal("Failed to execute command:"  // LCOV_EXCL_LINE
-                << command << " " << strerror(errno));
+                << command << " " << std::strerror(errno));
         return -1;  // LCOV_EXCL_LINE
     } else {
         UASSERT(WIFEXITED(ret), "system(" << command << ") returned unexpected value of " << ret);

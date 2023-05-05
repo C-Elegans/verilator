@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2009-2018 Tony Bybell.
+ * Copyright (c) 2009-2023 Tony Bybell.
  *
  * Permission is hereby granted, free of charge, to any person obtaining a
  * copy of this software and associated documentation files (the "Software"),
@@ -58,6 +58,7 @@
 #endif
 
 #ifdef __MINGW32__
+#define WIN32_LEAN_AND_MEAN
 #include <windows.h>
 #endif
 
@@ -131,7 +132,7 @@ void **JenkinsIns(void *base_i, const unsigned char *mem, uint32_t length, uint3
 #define FST_GZIO_LEN                    (32768)
 #define FST_HDR_FOURPACK_DUO_SIZE       (4*1024*1024)
 
-#if defined(__i386__) || defined(__x86_64__) || defined(_AIX)
+#if defined(__i386__) || defined(__x86_64__) || defined(_AIX) || defined(__aarch64__)
 #define FST_DO_MISALIGNED_OPS
 #endif
 
@@ -140,7 +141,7 @@ void **JenkinsIns(void *base_i, const unsigned char *mem, uint32_t length, uint3
 #include <sys/sysctl.h>
 #endif
 
-#if defined(FST_MACOSX) || defined(__MINGW32__) || defined(__OpenBSD__) || defined(__FreeBSD__)
+#if defined(FST_MACOSX) || defined(__MINGW32__) || defined(__OpenBSD__) || defined(__FreeBSD__) || defined(__NetBSD__)
 #define FST_UNBUFFERED_IO
 #endif
 
@@ -334,26 +335,22 @@ return(NULL);
 /*
  * mmap compatibility
  */
-#if defined __CYGWIN__ || defined __MINGW32__
+#if defined __MINGW32__
 #include <limits.h>
 #define fstMmap(__addr,__len,__prot,__flags,__fd,__off) fstMmap2((__len), (__fd), (__off))
-#define fstMunmap(__addr,__len)                         free(__addr)
+#define fstMunmap(__addr,__len)                         UnmapViewOfFile((LPCVOID)__addr)
 
 static void *fstMmap2(size_t __len, int __fd, fst_off_t __off)
 {
-(void)__off;
+HANDLE handle = CreateFileMapping((HANDLE)_get_osfhandle(__fd), NULL,
+				  PAGE_READWRITE, (DWORD)(__len >> 32),
+				  (DWORD)__len, NULL);
+if (!handle) { return NULL; }
 
-unsigned char *pnt = (unsigned char *)malloc(__len);
-fst_off_t cur_offs = lseek(__fd, 0, SEEK_CUR);
-size_t i;
-
-lseek(__fd, 0, SEEK_SET);
-for(i=0;i<__len;i+=SSIZE_MAX)
-        {
-        read(__fd, pnt + i, ((__len - i) >= SSIZE_MAX) ? SSIZE_MAX : (__len - i));
-        }
-lseek(__fd, cur_offs, SEEK_SET);
-return(pnt);
+void *ptr = MapViewOfFileEx(handle, FILE_MAP_READ | FILE_MAP_WRITE,
+			    0, (DWORD)__off, (SIZE_T)__len, (LPVOID)NULL);
+CloseHandle(handle);
+return ptr;
 }
 #else
 #include <sys/mman.h>
@@ -984,14 +981,26 @@ fflush(xc->handle);
  */
 static void fstWriterMmapSanity(void *pnt, const char *file, int line, const char *usage)
 {
-#if !defined(__CYGWIN__) && !defined(__MINGW32__)
-if(pnt == MAP_FAILED)
+if(pnt == NULL
+#ifdef MAP_FAILED
+   || pnt == MAP_FAILED
+#endif
+  )
 	{
 	fprintf(stderr, "fstMmap() assigned to %s failed: errno: %d, file %s, line %d.\n", usage, errno, file, line);
+#if !defined(__MINGW32__)
 	perror("Why");
+#else
+	LPSTR mbuf = NULL;
+	FormatMessage(FORMAT_MESSAGE_ALLOCATE_BUFFER | FORMAT_MESSAGE_FROM_SYSTEM
+		      | FORMAT_MESSAGE_IGNORE_INSERTS, NULL, GetLastError(),
+		      MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT),
+		      (LPSTR)&mbuf, 0, NULL);
+	fprintf(stderr, "%s", mbuf);
+	LocalFree(mbuf);
+#endif
 	pnt = NULL;
 	}
-#endif
 }
 
 
@@ -1037,33 +1046,10 @@ if(!xc->curval_mem)
 
 static void fstDestroyMmaps(struct fstWriterContext *xc, int is_closing)
 {
-#if !defined __CYGWIN__ && !defined __MINGW32__
 (void)is_closing;
-#endif
 
 fstMunmap(xc->valpos_mem, xc->maxhandle * 4 * sizeof(uint32_t));
 xc->valpos_mem = NULL;
-
-#if defined __CYGWIN__ || defined __MINGW32__
-if(xc->curval_mem)
-        {
-        if(!is_closing) /* need to flush out for next emulated mmap() read */
-                {
-                unsigned char *pnt = xc->curval_mem;
-                int __fd = fileno(xc->curval_handle);
-                fst_off_t cur_offs = lseek(__fd, 0, SEEK_CUR);
-                size_t i;
-                size_t __len = xc->maxvalpos;
-
-                lseek(__fd, 0, SEEK_SET);
-                for(i=0;i<__len;i+=SSIZE_MAX)
-                        {
-                        write(__fd, pnt + i, ((__len - i) >= SSIZE_MAX) ? SSIZE_MAX : (__len - i));
-                        }
-                lseek(__fd, cur_offs, SEEK_SET);
-                }
-        }
-#endif
 
 fstMunmap(xc->curval_mem, xc->maxvalpos);
 xc->curval_mem = NULL;
@@ -3412,6 +3398,7 @@ int flat_hier_alloc_len;
 unsigned do_rewind : 1;
 char str_scope_nam[FST_ID_NAM_SIZ+1];
 char str_scope_comp[FST_ID_NAM_SIZ+1];
+char *str_scope_attr;
 
 unsigned fseek_failed : 1;
 
@@ -4130,26 +4117,35 @@ if(xc->do_rewind)
 if(!(isfeof=feof(xc->fh)))
         {
         int tag = fgetc(xc->fh);
+	int cl;
         switch(tag)
                 {
                 case FST_ST_VCD_SCOPE:
                         xc->hier.htyp = FST_HT_SCOPE;
                         xc->hier.u.scope.typ = fgetc(xc->fh);
                         xc->hier.u.scope.name = pnt = xc->str_scope_nam;
+			cl = 0;
                         while((ch = fgetc(xc->fh)))
                                 {
-                                *(pnt++) = ch;
+				if(cl < FST_ID_NAM_SIZ)
+					{
+					pnt[cl++] = ch;
+					}
                                 }; /* scopename */
-                        *pnt = 0;
-                        xc->hier.u.scope.name_length = pnt - xc->hier.u.scope.name;
+                        pnt[cl] = 0;
+                        xc->hier.u.scope.name_length = cl;
 
                         xc->hier.u.scope.component = pnt = xc->str_scope_comp;
+			cl = 0;
                         while((ch = fgetc(xc->fh)))
                                 {
-                                *(pnt++) = ch;
+				if(cl < FST_ID_NAM_SIZ)
+					{
+					pnt[cl++] = ch;
+					}
                                 }; /* scopecomp */
-                        *pnt = 0;
-                        xc->hier.u.scope.component_length = pnt - xc->hier.u.scope.component;
+                        pnt[cl] = 0;
+                        xc->hier.u.scope.component_length = cl;
                         break;
 
                 case FST_ST_VCD_UPSCOPE:
@@ -4160,13 +4156,21 @@ if(!(isfeof=feof(xc->fh)))
                         xc->hier.htyp = FST_HT_ATTRBEGIN;
                         xc->hier.u.attr.typ = fgetc(xc->fh);
                         xc->hier.u.attr.subtype = fgetc(xc->fh);
-                        xc->hier.u.attr.name = pnt = xc->str_scope_nam;
+			if(!xc->str_scope_attr)
+				{
+				xc->str_scope_attr = (char *)calloc(1, FST_ID_NAM_ATTR_SIZ+1);
+				}
+                        xc->hier.u.attr.name = pnt = xc->str_scope_attr;
+			cl = 0;
                         while((ch = fgetc(xc->fh)))
                                 {
-                                *(pnt++) = ch;
-                                }; /* scopename */
-                        *pnt = 0;
-                        xc->hier.u.attr.name_length = pnt - xc->hier.u.scope.name;
+				if(cl < FST_ID_NAM_ATTR_SIZ)
+					{
+					pnt[cl++] = ch;
+					}
+                                }; /* attrname */
+			pnt[cl] = 0;
+                        xc->hier.u.attr.name_length = cl;
 
                         xc->hier.u.attr.arg = fstReaderVarint64(xc->fh);
 
@@ -4221,12 +4225,16 @@ if(!(isfeof=feof(xc->fh)))
                         xc->hier.u.var.typ = tag;
                         xc->hier.u.var.direction = fgetc(xc->fh);
                         xc->hier.u.var.name = pnt = xc->str_scope_nam;
+			cl = 0;
                         while((ch = fgetc(xc->fh)))
                                 {
-                                *(pnt++) = ch;
+				if(cl < FST_ID_NAM_SIZ)
+					{
+					pnt[cl++] = ch;
+					}
                                 }; /* varname */
-                        *pnt = 0;
-                        xc->hier.u.var.name_length = pnt - xc->hier.u.var.name;
+                        pnt[cl] = 0;
+                        xc->hier.u.var.name_length = cl;
                         xc->hier.u.var.length = fstReaderVarint32(xc->fh);
                         if(tag == FST_VT_VCD_PORT)
                                 {
@@ -4273,6 +4281,7 @@ unsigned int num_signal_dyn = 65536;
 int attrtype, subtype;
 uint64_t attrarg;
 fstHandle maxhandle_scanbuild;
+int cl;
 
 if(!xc) return(0);
 
@@ -4355,11 +4364,15 @@ while(!feof(xc->fh))
                         scopetype = fgetc(xc->fh);
                         if((scopetype < FST_ST_MIN) || (scopetype > FST_ST_MAX)) scopetype = FST_ST_VCD_MODULE;
                         pnt = str;
+			cl = 0;
                         while((ch = fgetc(xc->fh)))
                                 {
-                                *(pnt++) = ch;
+				if(cl < FST_ID_NAM_ATTR_SIZ)
+					{
+					pnt[cl++] = ch;
+					}
                                 }; /* scopename */
-                        *pnt = 0;
+                        pnt[cl] = 0;
                         while(fgetc(xc->fh)) { }; /* scopecomp */
 
                         if(fv) fprintf(fv, "$scope %s %s $end\n", modtypes[scopetype], str);
@@ -4373,11 +4386,15 @@ while(!feof(xc->fh))
                         attrtype = fgetc(xc->fh);
                         subtype = fgetc(xc->fh);
                         pnt = str;
+			cl = 0;
                         while((ch = fgetc(xc->fh)))
                                 {
-                                *(pnt++) = ch;
+				if(cl < FST_ID_NAM_ATTR_SIZ)
+					{
+					pnt[cl++] = ch;
+					}
                                 }; /* attrname */
-                        *pnt = 0;
+                        pnt[cl] = 0;
 
                         if(!str[0]) { strcpy(str, "\"\""); }
 
@@ -4458,11 +4475,15 @@ while(!feof(xc->fh))
                         vartype = tag;
                         /* vardir = */ fgetc(xc->fh); /* unused in VCD reader, but need to advance read pointer */
                         pnt = str;
+			cl = 0;
                         while((ch = fgetc(xc->fh)))
                                 {
-                                *(pnt++) = ch;
+				if(cl < FST_ID_NAM_ATTR_SIZ)
+					{
+					pnt[cl++] = ch;
+					}
                                 }; /* varname */
-                        *pnt = 0;
+                        pnt[cl] = 0;
                         len = fstReaderVarint32(xc->fh);
                         alias = fstReaderVarint32(xc->fh);
 
@@ -4944,6 +4965,7 @@ if(xc)
         free(xc->signal_typs); xc->signal_typs = NULL;
         free(xc->signal_lens); xc->signal_lens = NULL;
         free(xc->filename); xc->filename = NULL;
+	free(xc->str_scope_attr); xc->str_scope_attr = NULL;
 
         if(xc->fh)
                 {

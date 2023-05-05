@@ -6,7 +6,7 @@
 //
 //*************************************************************************
 //
-// Copyright 2003-2022 by Wilson Snyder. This program is free software; you
+// Copyright 2003-2023 by Wilson Snyder. This program is free software; you
 // can redistribute it and/or modify it under the terms of either the GNU
 // Lesser General Public License Version 3 or the Perl Artistic License
 // Version 2.0.
@@ -26,13 +26,12 @@
 //######################################################################
 // Emitter that can emit constant initializer expressions
 
-class EmitCConstInit VL_NOT_FINAL : public EmitCBaseVisitor {
+class EmitCConstInit VL_NOT_FINAL : public EmitCBaseVisitorConst {
     // MEMBERS
-    bool m_inUnpacked = false;
     uint32_t m_unpackedWord = 0;
+    bool m_inUnpacked = false;
 
     // METHODS
-    VL_DEBUG_FUNC;  // Declare debug()
 
     uint32_t tabModulus(AstNodeDType* dtypep) {
         const uint32_t elemBytes = dtypep->widthTotalBytes();
@@ -45,7 +44,7 @@ class EmitCConstInit VL_NOT_FINAL : public EmitCBaseVisitor {
 
 protected:
     // VISITORS
-    virtual void visit(AstInitArray* nodep) override {
+    void visit(AstInitArray* nodep) override {
         VL_RESTORER(m_inUnpacked);
         VL_RESTORER(m_unpackedWord);
         m_inUnpacked = true;
@@ -65,7 +64,7 @@ protected:
                 ofp()->printf("%" PRIx64 "ULL", itr.first);
                 ofp()->putsNoTracking(":");
                 ofp()->putsNoTracking("{");
-                iterate(nodep->getIndexValuep(itr.first));
+                iterateConst(nodep->getIndexValuep(itr.first));
                 ofp()->putsNoTracking("}");
             }
             puts("\n");
@@ -84,7 +83,7 @@ protected:
             for (uint64_t n = 0; n < size; ++n) {
                 m_unpackedWord = n;
                 if (n) puts((n % tabMod) ? ", " : ",\n");
-                iterate(nodep->getIndexDefaultedValuep(n));
+                iterateConst(nodep->getIndexDefaultedValuep(n));
             }
             puts("\n");
             puts("}");
@@ -94,15 +93,17 @@ protected:
         }
     }
 
-    virtual void visit(AstInitItem* nodep) override {  // LCOV_EXCL_START
+    void visit(AstInitItem* nodep) override {  // LCOV_EXCL_START
         nodep->v3fatal("Handled by AstInitArray");
     }  // LCOV_EXCL_STOP
 
-    virtual void visit(AstConst* nodep) override {
+    void visit(AstConst* nodep) override {
         const V3Number& num = nodep->num();
         UASSERT_OBJ(!num.isFourState(), nodep, "4-state value in constant pool");
         const AstNodeDType* const dtypep = nodep->dtypep();
-        if (num.isString()) {
+        if (num.isNull()) {
+            puts("VlNull{}");
+        } else if (num.isString()) {
             // Note: putsQuoted does not track indentation, so we use this instead
             puts("\"");
             puts(num.toString());
@@ -145,7 +146,7 @@ protected:
     }
 
     // Default
-    virtual void visit(AstNode* nodep) override {  // LCOV_EXCL_START
+    void visit(AstNode* nodep) override {  // LCOV_EXCL_START
         nodep->v3fatalSrc("Unknown node type reached EmitCConstInit: " << nodep->prettyTypeName());
     }  // LCOV_EXCL_STOP
 };

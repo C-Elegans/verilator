@@ -6,7 +6,7 @@
 //
 //*************************************************************************
 //
-// Copyright 2003-2022 by Wilson Snyder. This program is free software; you
+// Copyright 2003-2023 by Wilson Snyder. This program is free software; you
 // can redistribute it and/or modify it under the terms of either the GNU
 // Lesser General Public License Version 3 or the Perl Artistic License
 // Version 2.0.
@@ -17,14 +17,17 @@
 #include "config_build.h"
 #include "verilatedos.h"
 
-#include "V3Global.h"
 #include "V3GraphAlg.h"
+
+#include "V3Global.h"
 #include "V3GraphPathChecker.h"
 
 #include <algorithm>
-#include <vector>
-#include <map>
 #include <list>
+#include <map>
+#include <vector>
+
+VL_DEFINE_DEBUG_FUNCTIONS;
 
 //######################################################################
 //######################################################################
@@ -103,7 +106,7 @@ public:
     explicit GraphAlgRemoveTransitiveEdges(V3Graph* graphp)
         : GraphAlg<>(graphp, nullptr) {}
     void go() {
-        GraphPathChecker checker(m_graphp);
+        GraphPathChecker checker{m_graphp};
         for (V3GraphVertex* vxp = m_graphp->verticesBeginp(); vxp; vxp = vxp->verticesNextp()) {
             V3GraphEdge* deletep = nullptr;
             for (V3GraphEdge* edgep = vxp->outBeginp(); edgep; edgep = edgep->outNextp()) {
@@ -119,11 +122,10 @@ public:
     }
 
 private:
-    VL_DEBUG_FUNC;  // Declare debug()
     VL_UNCOPYABLE(GraphAlgRemoveTransitiveEdges);
 };
 
-void V3Graph::removeTransitiveEdges() { GraphAlgRemoveTransitiveEdges(this).go(); }
+void V3Graph::removeTransitiveEdges() { GraphAlgRemoveTransitiveEdges{this}.go(); }
 
 //######################################################################
 //######################################################################
@@ -164,7 +166,7 @@ public:
     ~GraphAlgWeakly() = default;
 };
 
-void V3Graph::weaklyConnected(V3EdgeFuncP edgeFuncp) { GraphAlgWeakly(this, edgeFuncp); }
+void V3Graph::weaklyConnected(V3EdgeFuncP edgeFuncp) { GraphAlgWeakly{this, edgeFuncp}; }
 
 //######################################################################
 //######################################################################
@@ -176,7 +178,10 @@ private:
     std::vector<V3GraphVertex*> m_callTrace;  // List of everything we hit processing so far
 
     void main() {
-        // Use Tarjan's algorithm to find the strongly connected subgraphs.
+        // Use Pearce's algorithm to color the strongly connected components. For reference see
+        // "An Improved Algorithm for Finding the Strongly Connected Components of a Directed
+        // Graph", David J.Pearce, 2005
+        //
         // Node State:
         //     Vertex::user     // DFS number indicating possible root of subtree, 0=not iterated
         //     Vertex::color    // Output subtree number (fully processed)
@@ -252,7 +257,7 @@ public:
     ~GraphAlgStrongly() = default;
 };
 
-void V3Graph::stronglyConnected(V3EdgeFuncP edgeFuncp) { GraphAlgStrongly(this, edgeFuncp); }
+void V3Graph::stronglyConnected(V3EdgeFuncP edgeFuncp) { GraphAlgStrongly{this, edgeFuncp}; }
 
 //######################################################################
 //######################################################################
@@ -305,9 +310,9 @@ public:
     ~GraphAlgRank() = default;
 };
 
-void V3Graph::rank() { GraphAlgRank(this, &V3GraphEdge::followAlwaysTrue); }
+void V3Graph::rank() { GraphAlgRank{this, &V3GraphEdge::followAlwaysTrue}; }
 
-void V3Graph::rank(V3EdgeFuncP edgeFuncp) { GraphAlgRank(this, edgeFuncp); }
+void V3Graph::rank(V3EdgeFuncP edgeFuncp) { GraphAlgRank{this, edgeFuncp}; }
 
 //######################################################################
 //######################################################################

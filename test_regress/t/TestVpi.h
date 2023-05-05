@@ -1,7 +1,7 @@
 // -*- mode: C++; c-file-style: "cc-mode" -*-
 //*************************************************************************
 //
-// Copyright 2013-2022 by Wilson Snyder. This program is free software; you can
+// Copyright 2013-2023 by Wilson Snyder. This program is free software; you can
 // redistribute it and/or modify it under the terms of either the GNU
 // Lesser General Public License Version 3 or the Perl Artistic License
 // Version 2.0.
@@ -29,7 +29,7 @@ public:
         , m_freeit(true) {}
     ~TestVpiHandle() { release(); }
     operator vpiHandle() const { return m_handle; }
-    inline TestVpiHandle& operator=(vpiHandle h) {
+    TestVpiHandle& operator=(vpiHandle h) {
         release();
         m_handle = h;
         return *this;

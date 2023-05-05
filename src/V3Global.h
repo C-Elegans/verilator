@@ -6,7 +6,7 @@
 //
 //*************************************************************************
 //
-// Copyright 2003-2022 by Wilson Snyder. This program is free software; you
+// Copyright 2003-2023 by Wilson Snyder. This program is free software; you
 // can redistribute it and/or modify it under the terms of either the GNU
 // Lesser General Public License Version 3 or the Perl Artistic License
 // Version 2.0.
@@ -48,7 +48,8 @@ class V3HierBlockPlan;
 
 // Object used by VL_RESTORER.  This object must be an auto variable, not
 // allocated on the heap or otherwise.
-template <typename T> class VRestorer {
+template <typename T>
+class VRestorer final {
     T& m_ref;  // Reference to object we're saving and restoring
     const T m_saved;  // Value saved, for later restore
 
@@ -69,19 +70,19 @@ public:
     VWidthMinUsage()
         : m_e{LINT_WIDTH} {}
     // cppcheck-suppress noExplicitConstructor
-    VWidthMinUsage(en _e)
+    constexpr VWidthMinUsage(en _e)
         : m_e{_e} {}
     explicit VWidthMinUsage(int _e)
         : m_e(static_cast<en>(_e)) {}  // Need () or GCC 4.8 false warning
-    operator en() const { return m_e; }
+    constexpr operator en() const { return m_e; }
 };
-inline bool operator==(const VWidthMinUsage& lhs, const VWidthMinUsage& rhs) {
+constexpr bool operator==(const VWidthMinUsage& lhs, const VWidthMinUsage& rhs) {
     return lhs.m_e == rhs.m_e;
 }
-inline bool operator==(const VWidthMinUsage& lhs, VWidthMinUsage::en rhs) {
+constexpr bool operator==(const VWidthMinUsage& lhs, VWidthMinUsage::en rhs) {
     return lhs.m_e == rhs;
 }
-inline bool operator==(VWidthMinUsage::en lhs, const VWidthMinUsage& rhs) {
+constexpr bool operator==(VWidthMinUsage::en lhs, const VWidthMinUsage& rhs) {
     return lhs == rhs.m_e;
 }
 
@@ -92,18 +93,23 @@ class V3Global final {
     // Globals
     AstNetlist* m_rootp = nullptr;  // Root of entire netlist,
     // created by makeInitNetlist(} so static constructors run first
-    V3HierBlockPlan* m_hierPlanp = nullptr;  // Hierarchical verilation plan,
+    V3HierBlockPlan* m_hierPlanp = nullptr;  // Hierarchical Verilation plan,
     // nullptr unless hier_block, set via hierPlanp(V3HierBlockPlan*}
     VWidthMinUsage m_widthMinUsage
         = VWidthMinUsage::LINT_WIDTH;  // What AstNode::widthMin() is used for
 
-    int m_debugFileNumber = 0;  // Number to append to debug files created
+    std::atomic_int m_debugFileNumber{0};  // Number to append to debug files created
     bool m_assertDTypesResolved = false;  // Tree should have dtypep()'s
     bool m_assertScoped = false;  // Tree is scoped
     bool m_constRemoveXs = false;  // Const needs to strip any Xs
     // Experimenting with always requiring heavy, see (#2701)
     bool m_needTraceDumper = false;  // Need __Vm_dumperp in symbols
     bool m_dpi = false;  // Need __Dpi include files
+    bool m_hasEvents = false;  // Design uses SystemVerilog named events
+    bool m_hasClasses = false;  // Design uses SystemVerilog classes
+    bool m_usesProbDist = false;  // Uses $dist_*
+    bool m_usesStdPackage = false;  // Design uses the std package
+    bool m_usesTiming = false;  // Design uses timing constructs
     bool m_hasForceableSignals = false;  // Need to apply V3Force pass
     bool m_hasSCTextSections = false;  // Has `systemc_* sections that need to be emitted
     bool m_useParallelBuild = false;  // Use parallel build for model
@@ -119,21 +125,17 @@ public:
 
     // CONSTRUCTORS
     V3Global() {}
-    AstNetlist* makeNetlist();
-    void boot() {
-        UASSERT(!m_rootp, "call once");
-        m_rootp = makeNetlist();
-    }
-    void clear();
-    void shutdown();  // Release allocated resorces
+    void boot();
+    void shutdown();  // Release allocated resources
     // ACCESSORS (general)
-    AstNetlist* rootp() const { return m_rootp; }
+    AstNetlist* rootp() const VL_MT_SAFE { return m_rootp; }
     VWidthMinUsage widthMinUsage() const { return m_widthMinUsage; }
     bool assertDTypesResolved() const { return m_assertDTypesResolved; }
     bool assertScoped() const { return m_assertScoped; }
 
     // METHODS
     void readFiles();
+    void removeStd();
     void checkTree() const;
     static void dumpCheckGlobalTree(const string& stagename, int newNumber = 0,
                                     bool doDump = true);
@@ -146,11 +148,21 @@ public:
     static string digitsFilename(int number);
     bool needTraceDumper() const { return m_needTraceDumper; }
     void needTraceDumper(bool flag) { m_needTraceDumper = flag; }
-    bool dpi() const { return m_dpi; }
+    bool dpi() const VL_MT_SAFE { return m_dpi; }
     void dpi(bool flag) { m_dpi = flag; }
+    bool hasEvents() const { return m_hasEvents; }
+    void setHasEvents() { m_hasEvents = true; }
+    bool hasClasses() const { return m_hasClasses; }
+    void setHasClasses() { m_hasClasses = true; }
+    bool usesProbDist() const { return m_usesProbDist; }
+    void setUsesProbDist() { m_usesProbDist = true; }
+    bool usesStdPackage() const { return m_usesStdPackage; }
+    void setUsesStdPackage() { m_usesStdPackage = true; }
+    bool usesTiming() const { return m_usesTiming; }
+    void setUsesTiming() { m_usesTiming = true; }
     bool hasForceableSignals() const { return m_hasForceableSignals; }
     void setHasForceableSignals() { m_hasForceableSignals = true; }
-    bool hasSCTextSections() const { return m_hasSCTextSections; }
+    bool hasSCTextSections() const VL_MT_SAFE { return m_hasSCTextSections; }
     void setHasSCTextSections() { m_hasSCTextSections = true; }
     V3HierBlockPlan* hierPlanp() const { return m_hierPlanp; }
     void hierPlanp(V3HierBlockPlan* plan) {

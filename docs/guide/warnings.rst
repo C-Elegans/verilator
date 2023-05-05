@@ -1,17 +1,18 @@
-.. Copyright 2003-2022 by Wilson Snyder.
+.. Copyright 2003-2023 by Wilson Snyder.
 .. SPDX-License-Identifier: LGPL-3.0-only OR Artistic-2.0
 
 *******************
 Errors and Warnings
 *******************
 
+.. _Disabling Warnings:
 
 Disabling Warnings
 ==================
 
 Warnings may be disabled in multiple ways:
 
-#. Disable the warning in the source code.  When the warning is printed it
+#. Disable the warning in the source code.  When the warning is printed, it
    will include a warning code.  Surround the offending line with a
    :code:`/*verilator&32;lint_off*/` and :code:`/*verilator&32;lint_on*/`
    metacomment pair:
@@ -23,8 +24,8 @@ Warnings may be disabled in multiple ways:
          // verilator lint_on UNSIGNED
 
 #. Disable the warning using :ref:`Configuration Files` with a
-   :option:`lint_off` command.  This is useful when a script is suppressing
-   warnings and the Verilog source should not be changed.  This method also
+   :option:`lint_off` command.  This is useful when a script suppresses
+   warnings, and the Verilog source should not be changed.  This method also
    allows matching on the warning text.
 
    .. code-block:: sv
@@ -35,7 +36,7 @@ Warnings may be disabled in multiple ways:
    :code:`-Wno-{warning-code}` option.  This should be avoided, as it
    removes all checking across the designs, and prevents other users from
    compiling your code without knowing the magic set of disables needed to
-   successfully compile your design.
+   compile your design successfully.
 
 
 Error And Warning Format
@@ -49,10 +50,10 @@ expression:
          %(Error|Warning)(-[A-Z0-9_]+)?: ((\S+):(\d+):((\d+):)? )?.*
 
 
-Errors and warning start with a percent sign (historical heritage from
-Digital Equipment Corporation).  Some errors or warning have a code
+Errors and warnings start with a percent sign (historical heritage from
+Digital Equipment Corporation).  Some errors or warnings have a code
 attached, with meanings described below.  Some errors also have a filename,
-line number and optional column number (starting at column 1 to match GCC).
+line number, and optional column number (starting at column 1 to match GCC).
 
 Following the error message, Verilator will typically show the user's
 source code corresponding to the error, prefixed by the line number and a "
@@ -65,22 +66,23 @@ List Of Warnings
 
 .. option:: Internal Error
 
-   This error should never occur first, though may occur if earlier
+   This error should never occur first, though it may occur if earlier
    warnings or error messages have corrupted the program.  If there are no
    other warnings or errors, submit a bug report.
 
 
 .. option:: Unsupported: ....
 
-   This error indicates that the code is using a Verilog language construct
-   that is not yet supported in Verilator.  See the Limitations chapter.
+   This error indicates that the code uses a Verilog language construct
+   that is not yet supported in Verilator.  See also :ref:`Language
+   Limitations`.
 
 
 .. option:: ALWCOMBORDER
 
    .. TODO better example
 
-   Warns that an :code:`always_comb` block has a variable which is set
+   Warns that an :code:`always_comb` block has a variable that is set
    after it is used.  This may cause simulation-synthesis mismatches, as
    not all simulators allow this ordering.
 
@@ -91,7 +93,25 @@ List Of Warnings
             b = 1;
          end
 
-   Ignoring this warning will only suppress the lint check, it will
+   Ignoring this warning will only suppress the lint check; it will
+   simulate correctly.
+
+
+.. option:: ASCRANGE
+
+   .. TODO better example
+
+   Warns that a packed vector is declared with ascending bit range
+   (i.e. [0:7]).  Descending bit range is now the overwhelming standard,
+   and ascending ranges are now thus often due to simple oversight
+   instead of intent (a notable exception is the OpenPOWER code base).
+
+   It also warns that an instance is declared with ascending range
+   (i.e. [0:7] or [7]) and is connected to an N-wide signal.
+   The bits will likely be in the reversed order from what people may expect
+   (i.e., instance [0] will connect to signal bit [N-1] not bit [0]).
+
+   Ignoring this warning will only suppress the lint check; it will
    simulate correctly.
 
 
@@ -108,15 +128,17 @@ List Of Warnings
          assign #100 a = b;
 
    Ignoring this warning may make Verilator simulations differ from other
-   simulators, however at one point this was a common style so disabled by
-   default as a code style warning.
+   simulators; however, this was a common style at one point, so disabled
+   by default as a code-style warning.
+
+   This warning is issued only if Verilator is run with :vlopt:`--no-timing`.
 
 
 .. option:: ASSIGNIN
 
    .. TODO better example
 
-   Error that an assignment is being made to an input signal.  This is
+   An error that an assignment is being made to an input signal.  This is
    almost certainly a mistake, though technically legal.
 
    .. code-block:: sv
@@ -124,34 +146,34 @@ List Of Warnings
          input a;
          assign a = 1'b1;
 
-   Ignoring this warning will only suppress the lint check, it will
+   Ignoring this warning will only suppress the lint check; it will
    simulate correctly.
 
 
 .. option:: BADSTDPRAGMA
 
-   Error that a pragma is badly formed, when that pragma is defined by IEEE
-   1800-2017.  For example, an empty pragma line, or an incorrect specified
-   'pragma protect'.  Note that 3rd party pragmas not defined by IEEE
-   1800-2017 are ignored.
+   An error that a pragma is badly formed, for pragmas defined by IEEE
+   1800-2017.  For example, an empty pragma line, or an incorrectly used
+   'pragma protect'.  Third-party pragmas not defined by IEEE 1800-2017 are
+   ignored.
 
 
 .. option:: BLKANDNBLK
 
    .. TODO better example
 
-   BLKANDNBLK is an error that a variable comes from a mix of blocking and
+   BLKANDNBLK is an error that a variable is driven by a mix of blocking and
    non-blocking assignments.
 
-   This is not illegal in SystemVerilog, but a violation of good coding
-   practice. Verilator reports this as an error, because ignoring this
+   This is not illegal in SystemVerilog but a violation of good coding
+   practice. Verilator reports this as an error because ignoring this
    warning may make Verilator simulations differ from other simulators.
 
-   It is generally safe to disable this error (with a :code:`// verilator
-   lint_off BLKANDNBLK` metacomment or the :code:`-Wno-BLKANDNBLK` option)
-   when one of the assignments is inside a public task, or when the
-   blocking and non-blocking assignments have non-overlapping bits and
-   structure members.
+   It is generally safe to disable this error (with a
+   :code:`// verilator lint_off BLKANDNBLK` metacomment or the
+   :code:`-Wno-BLKANDNBLK` option) when one of the assignments is inside a
+   public task, or when the blocking and non-blocking assignments have
+   non-overlapping bits and structure members.
 
    Generally, this is caused by a register driven by both combo logic and a
    flop:
@@ -162,7 +184,7 @@ List Of Warnings
          always @(posedge clk)  foo[0] <= ...
          always_comb foo[1] = ...
 
-   Instead use a different register for the flop:
+   Instead, use a different register for the flop:
 
    .. code-block:: sv
 
@@ -199,7 +221,7 @@ List Of Warnings
 
    This message is only seen on large or complicated loops because
    Verilator generally unrolls small loops.  You may want to try increasing
-   :vlopt:`--unroll-count` (and occasionally :vlopt:`--unroll-stmts`) which
+   :vlopt:`--unroll-count` (and occasionally :vlopt:`--unroll-stmts`), which
    will raise the small loop bar to avoid this error.
 
 
@@ -208,17 +230,17 @@ List Of Warnings
    .. TODO better example
 
    This indicates that a blocking assignment (=) is used in a sequential
-   block.  Generally non-blocking/delayed assignments (<=) are used in
+   block.  Generally, non-blocking/delayed assignments (<=) are used in
    sequential blocks, to avoid the possibility of simulator races.  It can
    be reasonable to do this if the generated signal is used ONLY later in
-   the same block, however this style is generally discouraged as it is
+   the same block; however, this style is generally discouraged as it is
    error prone.
 
    .. code-block:: sv
 
          always @(posedge clk)  foo = ...;  //<--- Warning
 
-   Disabled by default as this is a code style warning; it will simulate
+   Disabled by default as this is a code-style warning; it will simulate
    correctly.
 
    Other tools with similar warnings: Verible's always-ff-non-blocking,
@@ -231,12 +253,12 @@ List Of Warnings
    .. TODO better example
 
    Warns that a backslash is followed by a space then a newline. Likely the
-   intent was to have a backslash directly followed by a newline (e.g. when
-   making a "\`define") and there's accidentally white space at the end of
-   the line.  If the space is not accidental, suggest removing the
-   backslash in the code as it serves no function.
+   intent was to have a backslash directly followed by a newline (e.g.,
+   when making a "\`define"), and there's accidentally white space at the
+   end of the line.  If the space is not accidental, suggest removing the
+   backslash in the code, as it serves no function.
 
-   Ignoring this warning will only suppress the lint check, it will
+   Ignoring this warning will only suppress the lint check; it will
    simulate correctly.
 
 
@@ -244,13 +266,19 @@ List Of Warnings
 
    .. TODO better example
 
-   Warns that inside a case statement there is a stimulus pattern for which
-   there is no case item specified.  This is bad style, if a case is
+   Warns that inside a case statement, there is a stimulus pattern for
+   which no case item is provided.  This is bad style; if a case is
    impossible, it's better to have a :code:`default: $stop;` or just
    :code:`default: ;` so that any design assumption violations will be
-   discovered in simulation.
+   discovered in the simulation.
 
-   Ignoring this warning will only suppress the lint check, it will
+   Unique case statements that select on an enumerated variable, where all
+   of the enumerated values are covered by case items, are considered
+   complete even if the case statement does not cover illegal
+   non-enumerated values (IEEE 1800-2017 12.5.3).  To check that illegal
+   values are not hit, use :vlopt:`--assert`.
+
+   Ignoring this warning will only suppress the lint check; it will
    simulate correctly.
 
 
@@ -258,12 +286,12 @@ List Of Warnings
 
    .. TODO better example
 
-   Warns that inside a case statement has case values which are detected to
-   be overlapping.  This is bad style, as moving the order of case values
-   will cause different behavior.  Generally the values can be respecified
-   to not overlap.
+   Warns that a case statement has case values detected to be overlapping.
+   This is bad style, as moving the order of case values will cause
+   different behavior.  Generally the values can be respecified not to
+   overlap.
 
-   Ignoring this warning will only suppress the lint check, it will
+   Ignoring this warning will only suppress the lint check; it will
    simulate correctly.
 
 
@@ -271,12 +299,12 @@ List Of Warnings
 
    .. TODO better example
 
-   Warns that a case statement contains a constant with a ``x`` .
-   Verilator is two-state so interpret such items as always false.  Note a
-   common error is to use a ``X`` in a case or casez statement item; often
+   Warns that a case statement contains a constant with an ``x`` .
+   Verilator is two-state so interpret such items as always false.  Note that a
+   frequent error is to use a ``X`` in a case or casez statement item; often,
    what the user instead intended is to use a casez with ``?`` .
 
-   Ignoring this warning will only suppress the lint check, it will
+   Ignoring this warning will only suppress the lint check; it will
    simulate correctly.
 
 
@@ -289,7 +317,7 @@ List Of Warnings
    `http://www.sunburst-design.com/papers/CummingsSNUG1999Boston_FullParallelCase_rev1_1.pdf
    <http://www.sunburst-design.com/papers/CummingsSNUG1999Boston_FullParallelCase_rev1_1.pdf>`_
 
-   Ignoring this warning will only suppress the lint check, it will
+   Ignoring this warning will only suppress the lint check; it will
    simulate correctly.
 
 
@@ -298,33 +326,35 @@ List Of Warnings
    .. TODO better example
 
    Warns that a dynamic cast ($cast) is unnecessary as the $cast will
-   always succeed or fail.  If it will always fail, the $cast is
-   useless. If it will always succeed a static cast may be preferred.
+   always succeed or fail.  If it will always fail, the $cast is useless,
+   and if it will always succeed, a static cast may be preferred.
 
-   Ignoring this warning will only suppress the lint check, it will
+   Ignoring this warning will only suppress the lint check; it will
    simulate correctly.  On other simulators, not fixing CASTCONST may
    result in decreased performance.
 
 
 .. option:: CDCRSTLOGIC
 
-   With :vlopt:`--cdc` only, warns that asynchronous flop reset terms come
-   from other than primary inputs or flopped outputs, creating the
-   potential for reset glitches.
+   Historical, never issued since version 5.008.
+
+   Warned with a no longer supported clock domain crossing option that
+   asynchronous flop reset terms came from other than primary inputs or
+   flopped outputs, creating the potential for reset glitches.
 
 
 .. option:: CLKDATA
 
-   .. TODO better example
+   Historical, never issued since version 5.000.
 
-   Warns that clock signal is mixed used with/as data signal. The checking
-   for this warning is enabled only if user has explicitly marked some
-   signal as clocker using command line option or in-source meta comment
-   (see :vlopt:`--clk`).
+   Warned that clock signal was mixed used with/as a data signal. The
+   checking for this warning was enabled only if the user has explicitly
+   marked some signal as clocker using the command line option or in-source
+   meta comment (see :vlopt:`--clk`).
 
-   The warning can be disabled without affecting the simulation result. But
-   it is recommended to check the warning as this may degrade the
-   performance of the Verilated model.
+   The warning could be disabled without affecting the simulation
+   result. But it was recommended to check the warning as it may have
+   degraded the performance of the Verilated model.
 
 
 .. option:: CMPCONST
@@ -332,20 +362,20 @@ List Of Warnings
    .. TODO better example
 
    Warns that the code is comparing a value in a way that will always be
-   constant.  For example :code:`X > 1` will always be true when X is a
+   constant.  For example, :code:`X > 1` will always be true when X is a
    single bit wide.
 
-   Ignoring this warning will only suppress the lint check, it will
+   Ignoring this warning will only suppress the lint check; it will
    simulate correctly.
 
 
 .. option:: COLONPLUS
 
    Warns that a :code:`:+` is seen. Likely the intent was to use :code:`+:`
-   to select a range of bits. If the intent was a range that is explicitly
-   positive, suggest adding a space, e.g. use :code:`: +`.
+   to select a range of bits. If the intent was an explicitly positive
+   range, suggest adding a space, e.g., use :code:`: +`.
 
-   Ignoring this warning will only suppress the lint check, it will
+   Ignoring this warning will only suppress the lint check; it will
    simulate correctly.
 
 
@@ -366,19 +396,31 @@ List Of Warnings
    simulators.
 
 
+.. option:: CONSTRAINTIGN
+
+   Warns that Verilator does not support :code:`constraint`,
+   :code:`constraint_mode`, or :code:`rand_mode`, and the construct was are
+   ignored.
+
+   Ignoring this warning may make Verilator randomize() simulations differ
+   from other simulators.
+
+
 .. option:: CONTASSREG
 
    .. TODO better example
 
-   Error that a continuous assignment is setting a reg. According to IEEE
+   An error that a continuous assignment is setting a reg. According to IEEE
    Verilog, but not SystemVerilog, a wire must be used as the target of
    continuous assignments.
 
-   This error is only reported when :vlopt:`--language 1364-1995
-   <--language>`, :vlopt:`--language 1364-2001 <--language>`, or
+   This error is only reported when
+
+   :vlopt:`--language 1364-1995 <--language>`,
+   :vlopt:`--language 1364-2001 <--language>`, or
    :vlopt:`--language 1364-2005 <--language>` is used.
 
-   Ignoring this error will only suppress the lint check, it will simulate
+   Ignoring this error will only suppress the lint check; it will simulate
    correctly.
 
 
@@ -387,28 +429,28 @@ List Of Warnings
    .. TODO better example
 
    Warns that a module or other declaration's name doesn't match the
-   filename with path and extension stripped that it is declared in.  The
-   filename a modules/interfaces/programs is declared in should match the
-   name of the module etc. so that :vlopt:`-y` option directory searching
+   filename with the path and extension stripped that it is declared in.  The
+   filename a module/interface/program is declared in should match the
+   name of the module etc., so that :vlopt:`-y` option directory searching
    will work.  This warning is printed for only the first mismatching
    module in any given file, and :vlopt:`-v` library files are ignored.
 
-   Disabled by default as this is a code style warning; it will simulate
+   Disabled by default as this is a code-style warning; it will simulate
    correctly.
 
 
 .. option:: DEFPARAM
 
-   Warns that the :code:`defparam` statement was deprecated in Verilog 2001
+   Warns that the :code:`defparam` statement was deprecated in IEEE 1364-2001,
    and all designs should now be using the :code:`#(...)` format to specify
    parameters.
 
-   Defparams may be defined far from the instantiation that is affected by
+   Defparams may be defined far from the instantiation affected by
    the defparam, affecting readability. Defparams have been formally
    deprecated since IEEE 1800-2005 25.2 and may not work in future language
    versions.
 
-   Disabled by default as this is a code style warning; it will simulate
+   Disabled by default as this is a code-style warning; it will simulate
    correctly.
 
    Faulty example:
@@ -454,31 +496,28 @@ List Of Warnings
 
    Warning that a Verilator metacomment, or configuration file command uses
    syntax that has been deprecated.  Upgrade the code to the replacement
-   that should be suggested by the warning message.
+   typically suggested by the warning message.
 
-   Ignoring this warning will only suppress the lint check, it will
+   Ignoring this warning will only suppress the lint check; it will
    simulate correctly.
 
 
 .. option:: DETECTARRAY
 
-   .. TODO better example
+   Historical, never issued since version 3.862.
 
-   Error when Verilator tries to deal with a combinatorial loop that could
-   not be flattened, and which involves a datatype which Verilator cannot
-   handle, such as an unpacked struct or a large unpacked array. This
-   typically occurs when :vlopt:`-Wno-UNOPTFLAT <UNOPTFLAT>` has been used
-   to override an UNOPTFLAT warning (see below).
-
-   The solution is to break the loop, as described for UNOPTFLAT.
+   Was an error when Verilator tried to deal with a combinatorial loop that
+   could not be flattened, and which involves a datatype that Verilator
+   could not handle, such as an unpacked struct or a large unpacked array.
 
 
 .. option:: DIDNOTCONVERGE
 
-   Error at simulation runtime when model did not properly settle.
+   Error at simulation runtime when model did not correctly settle.
 
    Verilator sometimes has to evaluate combinatorial logic multiple times,
-   usually around code where a UNOPTFLAT warning was issued, but disabled.
+   usually around code where an :option:`UNOPTFLAT` warning was issued but
+   disabled.
 
    Faulty example:
 
@@ -488,27 +527,28 @@ List Of Warnings
 
    .. include:: ../../docs/gen/ex_DIDNOTCONVERGE_nodbg_msg.rst
 
-   This is because the signals keep toggling even with out time
+   This is because the signals keep toggling even without time
    passing. Thus to prevent an infinite loop, the Verilated executable
    gives the DIDNOTCONVERGE error.
 
-   To debug this, first review any UNOPT or UNOPTFLAT warnings that were
-   ignored.  Though typically it is safe to ignore UNOPTFLAT (at a
+   To debug this, first, review any UNOPTFLAT warnings that were
+   ignored.  Though typically, it is safe to ignore UNOPTFLAT (at a
    performance cost), at the time of issuing a UNOPTFLAT Verilator did not
    know if the logic would eventually converge and assumed it would.
 
-   Next, run Verilator with :vlopt:`--prof-cfuncs -CFLAGS -DVL_DEBUG
-   <--prof-cfuncs>`.  Rerun the test.  Now just before the convergence
-   error you should see additional output similar to this:
+   Next, run Verilator with
+   :vlopt:`--prof-cfuncs -CFLAGS -DVL_DEBUG <--prof-cfuncs>`.  Rerun the
+   test.  Now just before the convergence error, you should see additional
+   output similar to this:
 
    .. include:: ../../docs/gen/ex_DIDNOTCONVERGE_msg.rst
 
-   The CHANGE line means that on the given filename and line number that
-   drove a signal, the signal 'a' kept changing. Inspect the code that
-   modifies these signals.  Note if many signals are getting printed then
-   most likely all of them are oscillating.  It may also be that e.g. "a"
-   may be oscillating, then "a" feeds signal "c" which then is also
-   reported as oscillating.
+   The CHANGE line means that the signal 'a' kept changing on the given
+   filename and line number that drove the signal. Inspect the code that
+   modifies these signals.  Note that if many signals are getting printed,
+   then most likely, all of them are oscillating.  It may also be that,
+   e.g. "a" may be oscillating, then "a" feeds signal "c", which then is
+   also reported as oscillating.
 
    One way DIDNOTCONVERGE may occur is flops are built out of gate
    primitives. Verilator does not support building flops or latches out of
@@ -516,9 +556,10 @@ List Of Warnings
    constructs (e.g. always_ff and always_latch).
 
    Another way DIDNOTCONVERGE may occur is if # delays are used to generate
-   clocks.  Verilator ignores the delays and gives an :option:`ASSIGNDLY`
-   or :option:`STMTDLY` warning.  If these were suppressed, due to the
-   absence of the delay, the code may now oscillate.
+   clocks if Verilator is run with :vlopt:`--no-timing`. In this mode,
+   Verilator ignores the delays and gives an :option:`ASSIGNDLY` or
+   :option:`STMTDLY` warning.  If these were suppressed, due to the absence of
+   the delay, the design might oscillate.
 
    Finally, rare, more difficult cases can be debugged like a C++ program;
    either enter :command:`gdb` and use its tracing facilities, or edit the
@@ -527,21 +568,21 @@ List Of Warnings
 
 .. option:: ENDCAPSULATED
 
-   Warns that a class member is declared is local or protected, but is
-   being accessed from outside that class (if local) or a derived class
-   (if protected).
+   Warns that a class member is declared :code:`local` or
+   :code:`protected`, but is being accessed from outside that class (if
+   local) or a derived class (if protected).
 
-   Ignoring this warning will only suppress the lint check, it will
+   Ignoring this warning will only suppress the lint check; it will
    simulate correctly.
 
 
 .. option:: ENDLABEL
 
-   Warns that a label attached to a "end"-something statement does not
+   An error that a label attached to a "end"-something statement does not
    match the label attached to the block start.
 
-   Ignoring this warning will only suppress the lint check, it will
-   simulate correctly.
+   IEEE requires this error. Ignoring this warning will only suppress the
+   lint check; it will simulate correctly.
 
    Faulty example:
 
@@ -556,9 +597,9 @@ List Of Warnings
 
    .. code-block::
 
-         %Warning-ENDLABEL: example.v:2:13: End label 'not_mine' does not match begin label 'mine'
+         %Error-ENDLABEL: example.v:2:13: End label 'not_mine' does not match begin label 'mine'
 
-   To repair either fix the end label's name, or remove entirely.
+   To repair, either fix the end label's name, or remove it entirely.
 
    .. code-block:: sv
       :linenos:
@@ -572,15 +613,49 @@ List Of Warnings
    missing."
 
 
+.. option:: ENUMVALUE
+
+   An error that an enum data type value is being assigned from another data
+   type that is not implicitly assignment compatible with that enumerated
+   type.  IEEE requires this error, but it may be disabled.
+
+   Faulty example:
+
+   .. code-block:: sv
+      :linenos:
+      :emphasize-lines: 2
+
+         typedef enum { ZERO } e_t;
+         initial e_t en = 0;  //<--- Warning
+
+   The ideal repair is to use the enumeration value's mnemonic:
+
+   .. code-block:: sv
+      :linenos:
+      :emphasize-lines: 2
+
+         typedef enum { ZERO } e_t;
+         initial e_t en = ZERO;  //<--- Repaired
+
+   Alternatively use a static cast:
+
+   .. code-block:: sv
+      :linenos:
+      :emphasize-lines: 2
+
+         typedef enum { ZERO } e_t;
+         initial e_t en = e_t'(0);  //<--- Repaired
+
+
 .. option:: EOFNEWLINE
 
    Warns that a file does not end in a newline.  POSIX defines that a line
-   must end in newline, as otherwise for example :command:`cat` with the
+   must end in a newline, as otherwise, for example :command:`cat` with the
    file as an argument may produce undesirable results.
 
    Repair by appending a newline to the end of the file.
 
-   Disabled by default as this is a code style warning; it will simulate
+   Disabled by default as this is a code-style warning; it will simulate
    correctly.
 
    Other tools with similar warnings: Verible's posix-eof, "File must end
@@ -589,9 +664,10 @@ List Of Warnings
 
 .. option:: GENCLK
 
-   Deprecated and no longer used as a warning.  Used to indicate that the
-   specified signal was is generated inside the model, and also being used
-   as a clock.
+   Historical, never issued since version 5.000.
+
+   Indicated that the specified signal was generated inside the model and
+   used as a clock.
 
 
 .. option:: HIERBLOCK
@@ -605,18 +681,19 @@ List Of Warnings
 
    Warns that if/if else statements have exceeded the depth specified with
    :vlopt:`--if-depth`, as they are likely to result in slow priority
-   encoders.  Statements below unique and priority if statements are
-   ignored.  Solutions include changing the code to a case statement, or a
-   SystemVerilog :code:`unique if` or :code:`priority if`.
+   encoders.  Statements below unique and priority :code:`if` statements
+   are ignored.  Solutions include changing the code to a case statement,
+   or using a SystemVerilog :code:`unique if` or :code:`priority if`
+   statement.
 
-   Disabled by default as this is a code style warning; it will simulate
+   Disabled by default as this is a code-style warning; it will simulate
    correctly.
 
 
 .. option:: IGNOREDRETURN
 
    Warns that a non-void function is being called as a task, and hence the
-   return value is being ignored. This warning is required by IEEE.
+   return value is being ignored. IEEE requires this warning.
 
    .. code-block:: sv
       :linenos:
@@ -647,38 +724,59 @@ List Of Warnings
 
          initial void'(function_being_called_as_task());  //<--- Repaired
 
-   Ignoring this warning will only suppress the lint check, it will
+   Ignoring this warning will only suppress the lint check; it will
    simulate correctly.
 
 
 .. option:: IMPERFECTSCH
 
-   .. TODO better example
+   Historical, never issued since version 5.000.
 
-   Warns that the scheduling of the model is not absolutely perfect, and
-   some manual code edits may result in faster performance.  This warning
-   defaults to off, is not part of -Wall, and must be turned on explicitly
-   before the top module statement is processed.
+   Warned that the scheduling of the model is not perfect, and some manual
+   code edits may result in faster performance.  This warning defaulted to
+   off, was not part of :vlopt:`-Wall`, and had to be turned on explicitly
+   before the top module statement was processed.
 
 
 .. option:: IMPLICIT
 
    .. TODO better example
 
-   Warns that a wire is being implicitly declared (it is a single bit wide
+   Warns that a wire is being implicitly declared (it is a single-bit wide
    output from a sub-module.)  While legal in Verilog, implicit
-   declarations only work for single bit wide signals (not buses), do not
+   declarations only work for single-bit wide signals (not buses), do not
    allow using a signal before it is implicitly declared by an instance,
    and can lead to dangling nets.  A better option is the
    :code:`/*AUTOWIRE*/` feature of Verilog-Mode for Emacs, available from
    `https://www.veripool.org/verilog-mode
    <https://www.veripool.org/verilog-mode>`_
 
-   Ignoring this warning will only suppress the lint check, it will
+   Ignoring this warning will only suppress the lint check; it will
    simulate correctly.
 
    Other tools with similar warnings: Icarus Verilog's implicit, "warning:
    implicit definition of wire '...'".
+
+
+.. option:: IMPLICITSTATIC
+
+   Warns that the lifetime of a task or a function was not provided and so
+   was implicitly set to static. The warning is suppressed when no
+   variables inside the task or a function are assigned to.
+
+   This is a warning because the static default differs from C++, differs
+   from class member function/tasks.  Static is a more dangerous default
+   then automatic as static prevents the function from being reentrant,
+   which may be a source of bugs, and/or performance issues.
+
+   If the function does not require static behavior, change it to "function
+   automatic".
+
+   If the function requires static behavior, change it to "function
+   static".
+
+   Ignoring this warning will only suppress the lint check; it will
+   simulate correctly.
 
 
 .. option:: IMPORTSTAR
@@ -687,11 +785,11 @@ List Of Warnings
 
    Warns that an :code:`import {package}::*` statement is in $unit
    scope. This causes the imported symbols to pollute the global namespace,
-   defeating much of the purpose of having a package. Generally
-   :code:`import ::*` should only be used inside a lower scope such as a
+   defeating much of the purpose of having a package. Generally,
+   :code:`import ::*` should only be used inside a lower scope, such as a
    package or module.
 
-   Disabled by default as this is a code style warning; it will simulate
+   Disabled by default as this is a code-style warning; it will simulate
    correctly.
 
 
@@ -701,7 +799,7 @@ List Of Warnings
 
    Warns that a task or function that has been marked with a
    :option:`/*verilator&32;no_inline_task*/` metacomment, but it references
-   variables that are not local to the task.  Verilator cannot schedule
+   variables that are not local to the task, and Verilator cannot schedule
    these variables correctly.
 
    Ignoring this warning may make Verilator simulations differ from other
@@ -715,11 +813,11 @@ List Of Warnings
    Warns that an "\`include" filename specifies an absolute path.  This
    means the code will not work on any other system with a different file
    system layout.  Instead of using absolute paths, relative paths
-   (preferably without any directory specified whatsoever) should be used,
+   (preferably without any directory specified) should be used,
    and +incdir used on the command line to specify the top include source
    directories.
 
-   Disabled by default as this is a code style warning; it will simulate
+   Disabled by default as this is a code-style warning; it will simulate
    correctly.
 
 
@@ -727,14 +825,15 @@ List Of Warnings
 
    .. TODO better example
 
-   Warns that a while or for statement has a condition that is always true.
-   and thus results in an infinite loop if the statement ever executes.
+   Warns that a :code:`while` or :code:`for` statement has a condition that
+   is always true, and thus results in an infinite loop if the statement
+   ever executes.
 
-   This might be unintended behavior if the loop body contains statements
-   that in other simulators would make time pass, which Verilator is
-   ignoring due to e.g. ``STMTDLY`` warnings being disabled.
+   This might be unintended behavior if Verilator is run with
+   :vlopt:`--no-timing` and the loop body contains statements that would make
+   time pass otherwise.
 
-   Ignoring this warning will only suppress the lint check, it will
+   Ignoring this warning will only suppress the lint check; it will
    simulate correctly (i.e. hang due to the infinite loop).
 
 
@@ -742,9 +841,9 @@ List Of Warnings
 
    .. TODO better example
 
-   Warns that the code has a delayed assignment inside of an initial or
-   final block.  If this message is suppressed, Verilator will convert this
-   to a non-delayed assignment.  See also :option:`COMBDLY`.
+   Warns that the code has a delayed assignment inside of an :code:`initial`
+   or :code:`final` block.  If this message is suppressed, Verilator will
+   convert this to a non-delayed assignment.  See also :option:`COMBDLY`.
 
    Ignoring this warning may make Verilator simulations differ from other
    simulators.
@@ -752,12 +851,12 @@ List Of Warnings
 
 .. option:: INSECURE
 
-   Warns that the combination of options selected may be defeating the
+   Warns that the combination of selected options may defeat the
    attempt to protect/obscure identifiers or hide information in the model.
    Correct the options provided, or inspect the output code to see if the
    information exposed is acceptable.
 
-   Ignoring this warning will only suppress the lint check, it will
+   Ignoring this warning will only suppress the lint check; it will
    simulate correctly.
 
 
@@ -771,7 +870,7 @@ List Of Warnings
    keyword instead.  The warning may be disabled with a lint_off pragma
    around the always block.
 
-   Ignoring this warning will only suppress the lint check, it will
+   Ignoring this warning will only suppress the lint check; it will
    simulate correctly.
 
 
@@ -779,25 +878,27 @@ List Of Warnings
 
    .. TODO better example
 
-   Warns that a packed vector is declared with little endian bit numbering
-   (i.e. [0:7]).  Big endian bit numbering is now the overwhelming
-   standard, and little numbering is now thus often due to simple oversight
-   instead of intent.
+   The naming of this warning is in contradiction with the common
+   interpretation of little endian. It was therefore renamed to
+   :option:`ASCRANGE`. While :option:`LITENDIAN` remains for
+   backwards compatibility, new projects should use :option:`ASCRANGE`.
 
-   Also warns that an instance is declared with little endian range
-   (i.e. [0:7] or [7]) and is connected to a N-wide signal. Based on IEEE
-   the bits will likely be backwards from what people may expect
-   (i.e. instance [0] will connect to signal bit [N-1] not bit [0]).
 
-   Ignoring this warning will only suppress the lint check, it will
-   simulate correctly.
+.. option:: MINTYPMAX
+
+   .. code-block:: sv
+
+         #(3:5:8) clk = ~clk;
+
+   Warns that minimum, typical, and maximum delay expressions are currently
+   unsupported. Verilator uses only the typical delay value.
 
 
 .. option:: MODDUP
 
    .. TODO better example
 
-   Warns that a module has multiple definitions.  Generally this indicates
+   Warns that a module has multiple definitions.  Generally, this indicates
    a coding error, or a mistake in a library file, and it's good practice
    to have one module per file (and only put each file once on the command
    line) to avoid these issues.  For some gate level netlists duplicates
@@ -809,9 +910,9 @@ List Of Warnings
 
 .. option:: MULTIDRIVEN
 
-   Warns that the specified signal comes from multiple always blocks each
-   with different clocking. This warning does not look at individual bits
-   (see example below).
+   Warns that the specified signal comes from multiple :code:`always`
+   blocks, each with different clocking. This warning does not look at
+   individual bits (see the example below).
 
    This is considered bad style, as the consumer of a given signal may be
    unaware of the inconsistent clocking, causing clock domain crossing
@@ -825,8 +926,8 @@ List Of Warnings
 
    .. include:: ../../docs/gen/ex_MULTIDRIVEN_msg.rst
 
-   Ignoring this warning will only slow simulations, it will simulate
-   correctly.  It may however cause longer simulation runtimes due to
+   Ignoring this warning will only slow simulations; it will simulate
+   correctly.  It may, however, cause longer simulation runtimes due to
    reduced optimizations.
 
 
@@ -834,33 +935,41 @@ List Of Warnings
 
    .. TODO better example
 
-   Warns that there are multiple top level modules, that is modules not
-   instantiated by any other module, and both modules were put on the
-   command line (not in a library). Three likely cases:
+   Warns that multiple top-level modules are not instantiated by any other
+   module, and both modules were put on the command line (not in a
+   library). Three likely cases:
 
    1. A single module is intended to be the top. This warning then occurs
-   because some low level instance is being read in, but is not really
-   needed as part of the design.  The best solution for this situation is
-   to ensure that only the top module is put on the command line without
-   any flags, and all remaining library files are read in as libraries with
+   because some low-level instance is being read in but is not needed as
+   part of the design.  The best solution for this situation is to ensure
+   that only the top module is put on the command line without any flags,
+   and all remaining library files are read in as libraries with
    :vlopt:`-v`, or are automatically resolved by having filenames that
    match the module names.
 
    2. A single module is intended to be the top, the name of it is known,
    and all other modules should be ignored if not part of the design.  The
-   best solution is to use the :vlopt:`--top` option to specify the top module's
-   name. All other modules that are not part of the design will be for the
-   most part ignored (they must be clean in syntax and their contents will
-   be removed as part of the Verilog module elaboration process.)
+   best solution is to use the :vlopt:`--top` option to specify the top
+   module's name. All other modules that are not part of the design will be
+   for the most part, ignored (they must be clean in syntax, and their
+   contents will be removed as part of the Verilog module elaboration
+   process.)
 
-   3. Multiple modules are intended to be design tops, e.g. when linting a
+   3. Multiple modules are intended to be design tops, e.g., when linting a
    library file.  As multiple modules are desired, disable the MULTITOP
    warning.  All input/outputs will go uniquely to each module, with any
    conflicting and identical signal names being made unique by adding a
    prefix based on the top module name followed by __02E (a
    Verilator-encoded ASCII ".").  This renaming is done even if the two
-   modules' signals seem identical, e.g. multiple modules with a "clk"
+   modules' signals seem identical, e.g., multiple modules with a "clk"
    input.
+
+
+.. option:: NEEDTIMINGOPT
+
+   Error when a timing-related construct, such as an event control or delay,
+   has been encountered, without specifying how Verilator should handle it
+   (neither :vlopt:`--timing` nor :vlopt:`--no-timing` option was provided).
 
 
 .. option:: NOLATCH
@@ -871,18 +980,25 @@ List Of Warnings
    may be disabled with a lint_off pragma around the always block, but
    recoding using a regular always may be more appropriate.
 
-   Ignoring this warning will only suppress the lint check, it will
+   Ignoring this warning will only suppress the lint check; it will
    simulate correctly.
+
+
+.. option:: NOTIMING
+
+   Error when a timing-related construct that requires :vlopt:`--timing` has
+   been encountered. Issued only if Verilator is run with the
+   :vlopt:`--no-timing` option.
 
 
 .. option:: NULLPORT
 
    Warns that a null port was detected in the module definition port
-   list. Null ports are empty placeholders, i.e. either one ore more commas
+   list. Null ports are empty placeholders, i.e., either one or more commas
    at the beginning or the end of a module port list, or two or more
    consecutive commas in the middle of a module port list. A null port
    cannot be accessed within the module, but when instantiating the module
-   by port order, it is treated like a regular port and any wire connected
+   by port order, it is treated like a regular port, and any wire connected
    to it is left unconnected. For example:
 
    .. code-block:: sv
@@ -893,22 +1009,22 @@ List Of Warnings
           (a_named_port, );  //<--- Warning
 
    This is considered a warning because null ports are rarely used, and is
-   mostly the result of a typing error such as a dangling comma at the end
-   of a port list.
+   commonly the result of a typing error, such as a dangling comma at the
+   end of a port list.
 
-   Ignoring this warning will only suppress the lint check, it will
+   Ignoring this warning will only suppress the lint check; it will
    simulate correctly.
 
 .. option:: PINCONNECTEMPTY
 
    .. TODO better example
 
-   Warns that an instance has a pin which is connected to
-   :code:`.pin_name()`, e.g. not another signal, but with an explicit
+   Warns that an instance has a pin that is connected to
+   :code:`.pin_name()`, e.g., not another signal, but with an explicit
    mention of the pin.  It may be desirable to disable PINCONNECTEMPTY, as
-   this indicates intention to have a no-connect.
+   this indicates the intention to have a no-connect.
 
-   Disabled by default as this is a code style warning; it will simulate
+   Disabled by default as this is a code-style warning; it will simulate
    correctly.
 
 
@@ -916,11 +1032,11 @@ List Of Warnings
 
    .. TODO better example
 
-   Warns that a module has a pin which is not mentioned in an instance.  If
+   Warns that a module has a pin that is not mentioned in an instance.  If
    a pin is not missing it should still be specified on the instance
-   declaration with a empty connection, using :code:`(.pin_name())`.
+   declaration with an empty connection using :code:`(.pin_name())`.
 
-   Ignoring this warning will only suppress the lint check, it will
+   Ignoring this warning will only suppress the lint check; it will
    simulate correctly.
 
    Other tools with similar warnings: Icarus Verilog's portbind, "warning:
@@ -932,16 +1048,16 @@ List Of Warnings
 
    .. TODO better example
 
-   Warns that an instance has a pin which is not connected to another
+   Warns that an instance has a pin that is not connected to another
    signal.
 
-   Disabled by default as this is a code style warning; it will simulate
+   Disabled by default as this is a code-style warning; it will simulate
    correctly.
 
 
 .. option:: PINNOTFOUND
 
-   Warns that an instance port or Parameter was not found in the module
+   Warns that an instance port or parameter was not found in the module
    being instantiated. Note that Verilator raises these errors also on
    instances that should be disabled by generate/if/endgenerate constructs:
 
@@ -963,8 +1079,8 @@ List Of Warnings
        endmodule
 
    In the example above, b is instantiated with a port named x, but module
-   b has no such port. In the next line, b is instantiated again with a
-   nonexistent parameter PX. Technically, this code is incorrect because of
+   b has no such port. In the following line, b is instantiated with a
+   nonexistent PX parameter. Technically, this code is incorrect because of
    this, but other tools may ignore it because module b is not instantiated
    due to the generate/if condition being false.
 
@@ -988,7 +1104,7 @@ List Of Warnings
          assign out = '1;
        endmodule
 
-   In the example above, out is an output but is connected to a constant
+   In the example above, out is an output but is connected to a constant,
    implying it is an input.
 
    This error may be disabled with a lint_off PORTSHORT metacomment.
@@ -998,8 +1114,8 @@ List Of Warnings
 
    .. TODO better example
 
-   Error that a package/class appears to have been referenced that has not
-   yet been declared.  According to IEEE 1800-2017 26.3 all packages must
+   An error that a package/class appears to have been referenced that has not
+   yet been declared.  According to IEEE 1800-2017 26.3, all packages must
    be declared before being used.
 
 
@@ -1007,30 +1123,30 @@ List Of Warnings
 
    .. TODO better example
 
-   Error that a procedural assignment is setting a wire. According to IEEE,
+   An error that a procedural assignment is setting a wire. According to IEEE,
    a var/reg must be used as the target of procedural assignments.
 
 
 .. option:: PROFOUTOFDATE
 
-   Warns that threads were scheduled using estimated costs, despite the
-   fact that data was provided from profile-guided optimization (see
+   Warns that threads were scheduled using estimated costs, even though
+   that data was provided from profile-guided optimization (see
    :ref:`Thread PGO`) as fed into Verilator using the
    :option:`profile_data` configuration file option.  This usually
-   indicates that the profile data was generated from different Verilog
+   indicates that the profile data was generated from a different Verilog
    source code than Verilator is currently running against.
 
    It is recommended to create new profiling data, then rerun Verilator
    with the same input source files and that new profiling data.
 
-   Ignoring this warning may only slow simulations, it will simulate
+   Ignoring this warning may only slow simulations; it will simulate
    correctly.
 
 
 .. option:: PROTECTED
 
    Warning that a 'pragma protected' section was encountered. The code
-   inside the protected region will be partly checked for correctness, but is
+   inside the protected region will be partly checked for correctness but is
    otherwise ignored.
 
    Suppressing the warning may make Verilator differ from a simulator that
@@ -1039,8 +1155,8 @@ List Of Warnings
 
 .. option:: RANDC
 
-   Warns that the :code:`randc` keyword is currently unsupported, and that
-   it is being converted to :code:`rand`.
+   Warns that the :code:`randc` keyword is unsupported and being converted
+   to :code:`rand`.
 
 
 .. option:: REALCVT
@@ -1096,7 +1212,7 @@ List Of Warnings
                               example.v:1:20: ... Location of previous definition, with value: 'def2'
 
    The best solution is to use a different name for the second macro.  If
-   this is not possible, add a undef to indicate the code is overriding the
+   this is infeasible, add an undef to indicate that the code overriding the
    value. This will express the intent and should avoid future warnings on
    any linting tool:
 
@@ -1112,6 +1228,16 @@ List Of Warnings
    "Duplicate macro arguments with name".
 
 
+.. option:: RISEFALLDLY
+
+   .. code-block:: sv
+
+         and #(1,2,3) AND (out, a, b);
+
+   Warns that rising, falling, and turn-off delays are currently unsupported.
+   The first (rising) delay is used for all cases.
+
+
 .. option:: SELRANGE
 
    Warns that a selection index will go out of bounds.
@@ -1125,8 +1251,8 @@ List Of Warnings
          wire vec[6:0];
          initial out = vec[7];  //<--- Warning (there is no [7])
 
-   Verilator will assume zero for this value, instead of X.  Note that in
-   some cases this warning may be false, when a condition upstream or
+   Verilator will assume zero for this value instead of X.  Note that in
+   some cases, this warning may be false, when a condition upstream or
    downstream of the access means the access out of bounds will never
    execute or be used.
 
@@ -1148,7 +1274,7 @@ List Of Warnings
 
 .. option:: SHORTREAL
 
-   Warns that Verilator does not support :code:`shortreal` and they will be
+   Warns that Verilator does not support :code:`shortreal`, and they will be
    automatically promoted to :code:`real`.
 
    .. code-block:: sv
@@ -1168,8 +1294,8 @@ List Of Warnings
          real sig;  //<--- Repaired
 
    Ignoring this warning may make Verilator simulations differ from other
-   simulators, if the increased precision of real affects your model or DPI
-   calls.
+   simulators if the increased precision of :code:`real` affects the
+   modeled values, or DPI calls.
 
 
 .. option:: SPLITVAR
@@ -1177,23 +1303,34 @@ List Of Warnings
    Warns that a variable with a :option:`/*verilator&32;split_var*/`
    metacomment was not split.  Some possible reasons for this are:
 
-   * The datatype of the variable is not supported for splitting. (e.g. is
+   * The datatype of the variable is not supported for splitting. (e.g., is
      a real).
 
    * The access pattern of the variable can not be determined
-     statically. (e.g. is accessed as a memory).
+     statically. (e.g., is accessed as a memory).
 
    * The index of the array exceeds the array size.
 
-   * The variable is accessed from outside using dotted reference.
-     (e.g. top.instance0.variable0 = 1).
+   * The variable is accessed from outside using a dotted reference.
+     (e.g. :code:`top.instance0.variable0 = 1`).
 
    * The variable is not declared in a module, but in a package or an
      interface.
 
    * The variable is a parameter, localparam, genvar, or queue.
 
-   * The variable is tristate or bidirectional. (e.g. inout or ref).
+   * The variable is tristate or bidirectional. (e.g., :code:`inout`).
+
+
+.. option:: STATICVAR
+
+   Warns that a static variable declared in a loop with declaration assignment
+   was converted to automatic. Often such variables were intended to
+   instead be declared "automatic".
+
+   Ignoring this warning may make Verilator differ from other simulators,
+   which will treat the variable as static. Verilator may in future versions also
+   treat the variable as static.
 
 
 .. option:: STMTDLY
@@ -1211,27 +1348,28 @@ List Of Warnings
 
    .. include:: ../../docs/gen/ex_STMTDLY_msg.rst
 
-   This is a warning because Verilator does not support delayed statements.
-   It will ignore all such delays.  In many cases ignoring a delay might be
-   harmless, but if the delayed statement is, as in this example, used to
-   cause some important action at a later time, it might be an important
-   difference.
+   This warning is issued only if Verilator is run with :vlopt:`--no-timing`.
+   All delays on statements are ignored in this mode.  In many cases ignoring a
+   delay might be harmless, but if the delayed statement is, as in this
+   example, used to cause some important action later, it might be an
+   important difference.
 
    Some possible workarounds:
 
    * Move the delayed statement into the C++ wrapper file, where the
      stimulus and clock generation can be done in C++.
 
-   * Convert the statement into a FSM, or other statement that tests
+   * Convert the statement into an FSM, or other statement that tests
      against $time.
+
+   * Run Verilator with :vlopt:`--timing`.
 
 
 .. option:: SYMRSVDWORD
 
-   Warning that a symbol matches a C++ reserved word and using this as a
+   Warning that a symbol matches a C++ reserved word, and using this as a
    symbol name would result in odd C++ compiler errors.  You may disable
-   this warning, but the symbol will be renamed by Verilator to avoid the
-   conflict.
+   this warning, but Verilator will rename the symbol to avoid conflict.
 
 
 .. option:: SYNCASYNCNET
@@ -1239,21 +1377,20 @@ List Of Warnings
    .. TODO better example
 
    Warns that the specified net is used in at least two different always
-   statements with posedge/negedges (i.e. a flop).  One usage has the
+   statements with posedge/negedges (i.e., a flop).  One usage has the
    signal in the sensitivity list and body, probably as an async reset, and
-   the other usage has the signal only in the body, probably as a sync
-   reset.  Mixing sync and async resets is usually a mistake.  The warning
-   may be disabled with a lint_off pragma around the net, or either flopped
-   block.
+   the other has the signal only in the body, probably as a sync reset.
+   Mixing sync and async resets is usually a mistake.  The warning may be
+   disabled with a lint_off pragma around the net or flopped block.
 
-   Disabled by default as this is a code style warning; it will simulate
+   Disabled by default as this is a code-style warning; it will simulate
    correctly.
 
 
 .. option:: TASKNSVAR
 
    Error when a call to a task or function has an inout from that task tied
-   to a non-simple signal.  Instead connect the task output to a temporary
+   to a non-simple signal.  Instead, connect the task output to a temporary
    signal of the appropriate width, and use that signal to set the
    appropriate expression as the next statement.  For example:
 
@@ -1286,11 +1423,11 @@ List Of Warnings
 .. option:: TICKCOUNT
 
    Warns that the number of ticks to delay a $past variable is greater
-   than 10.  At present Verilator effectively creates a flop for each
-   delayed signals, and as such any large counts may lead to large design
+   than 10.  At present, Verilator effectively creates a flop for each
+   delayed signal, and as such, any large counts may lead to large design
    size increases.
 
-   Ignoring this warning will only slow simulations, it will simulate
+   Ignoring this warning will only slow simulations; it will simulate
    correctly.
 
 
@@ -1298,10 +1435,10 @@ List Of Warnings
 
    Warns that "\`timescale" is used in some but not all modules.
 
-   This may be disabled similar to other warnings.  Ignoring this warning
+   This may be disabled, similar to other warnings.  Ignoring this warning
    may result in a module having an unexpected timescale.
 
-   IEEE recommends this be an error, for that behavior use
+   IEEE recommends this be an error; for that behavior, use
    :vlopt:`-Werror-TIMESCALEMOD <-Werror-\<message\>>`.
 
    Faulty example:
@@ -1330,7 +1467,7 @@ List Of Warnings
 
          `include "timescale.vh"
 
-   Then in that file set the timescale.
+   Then in that file, set the timescale.
 
    Other tools with similar warnings: Icarus Verilog's timescale, "warning:
    Some design elements have no explicit time unit and/or time
@@ -1342,11 +1479,11 @@ List Of Warnings
 
    .. TODO better example
 
-   Warns that the specified signal has no source.  Verilator is fairly
+   Warns that the specified signal has no source.  Verilator is relatively
    liberal in the usage calculations; making a signal public, or setting
    only a single array element marks the entire signal as driven.
 
-   Disabled by default as this is a code style warning; it will simulate
+   Disabled by default as this is a code-style warning; it will simulate
    correctly.
 
    Other tools with similar warnings: Odin's "[NETLIST] This output is
@@ -1355,23 +1492,12 @@ List Of Warnings
 
 .. option:: UNOPT
 
-   .. TODO better example
+   Historical, never issued since version 5.000.
 
-   Warns that due to some construct, optimization of the specified signal
-   or block is disabled.  The construct should be cleaned up to improve
-   simulation performance.
+   Warned that due to some construct, optimization of the specified signal
+   or block was disabled.
 
-   A less obvious case of this is when a module instantiates two
-   submodules.  Inside submodule A, signal I is input and signal O is
-   output.  Likewise in submodule B, signal O is an input and I is an
-   output.  A loop exists and a UNOPT warning will result if AI & AO both
-   come from and go to combinatorial blocks in both submodules, even if
-   they are unrelated always blocks.  This affects performance because
-   Verilator would have to evaluate each submodule multiple times to
-   stabilize the signals crossing between the modules.
-
-   Ignoring this warning will only slow simulations, it will simulate
-   correctly.
+   Ignoring this warning only slowed simulations; it simulated correctly.
 
 
 .. option:: UNOPTFLAT
@@ -1380,18 +1506,13 @@ List Of Warnings
 
    Warns that due to some construct, optimization of the specified signal
    is disabled.  The signal reported includes a complete scope to the
-   signal; it may be only one particular usage of a multiply instantiated
+   signal; it may be only one particular usage of a multiply-instantiated
    block.  The construct should be cleaned up to improve simulation
-   performance; two times better performance may be possible by fixing
-   these warnings.
-
-   Unlike the ``UNOPT`` warning, this occurs after flattening the netlist,
-   and indicates a more basic problem, as the less obvious case described
-   under ``UNOPT`` does not apply.
+   performance.
 
    Often UNOPTFLAT is caused by logic that isn't truly circular as viewed by
-   synthesis which analyzes interconnection per-bit, but is circular to
-   simulation which analyzes per-bus.
+   synthesis, which analyzes interconnection per bit, but is circular to
+   the IEEE event model which analyzes per-signal.
 
    Faulty example:
 
@@ -1400,62 +1521,63 @@ List Of Warnings
          wire [2:0] x = {x[1:0], shift_in};
 
    This statement needs to be evaluated multiple times, as a change in
-   :code:`shift_in` requires "x" to be computed 3 times before it becomes
+   :code:`shift_in` requires "x" to be computed three times before it becomes
    stable.  This is because a change in "x" requires "x" itself to change
-   value, which causes the warning.
+   its value, which causes the warning.
 
-   For significantly better performance, split this into 2 separate signals:
+   For significantly better performance, split this into two separate signals:
 
    .. code-block:: sv
 
          wire [2:0] xout = {x[1:0], shift_in};
 
-   and change all receiving logic to instead receive "xout".
+   And change all receiving logic to instead receive "xout".
    Alternatively, change it to:
 
    .. code-block:: sv
 
          wire [2:0] x = {xin[1:0], shift_in};
 
-   and change all driving logic to instead drive "xin".
+   And change all driving logic to drive "xin" instead.
 
-   With this change this assignment needs to be evaluated only once.  These
-   sort of changes may also speed up your traditional event driven
+   With this change, this assignment needs to be evaluated only once.
+   These sorts of changes may also speed up your traditional event-driven
    simulator, as it will result in fewer events per cycle.
 
    The most complicated UNOPTFLAT path we've seen was due to low bits of a
-   bus being generated from an always statement that consumed high bits of
-   the same bus processed by another series of always blocks.  The fix is
-   the same; split it into two separate signals generated from each block.
+   bus generated from an always statement that consumed high bits of the
+   same bus processed by another series of always blocks.  The fix is the
+   same; split it into two separate signals generated from each block.
 
    Occasionally UNOPTFLAT may be indicated when there is a true
-   circulation.  e.g. if trying to implement a flop or latch using
-   individual gate primitives.  If UNOPTFLAT is suppressed the code may get
-   a DIDNOTCONVERGE error. Verilator does not support building flops or
+   circulation.  e.g., if trying to implement a flop or latch using
+   individual gate primitives.  If UNOPTFLAT is suppressed, the code may
+   get a DIDNOTCONVERGE error. Verilator does not support building flops or
    latches out of gate primitives, and any such code must change to use
-   behavioral constructs (e.g. always_ff and always_latch).
+   behavioral constructs (e.g., :code:`always_ff` and
+   :code:`always_latch`).
 
    Another way to resolve this warning is to add a
    :option:`/*verilator&32;split_var*/` metacomment described above. This
    will cause the variable to be split internally, potentially resolving
-   the conflict. If you run with `--report-unoptflat` Verilator will
+   the conflict. If you run with :vlopt:`--report-unoptflat`, Verilator will
    suggest possible candidates for :option:`/*verilator&32;split_var*/`.
-
-   The UNOPTFLAT warning may also be due to clock enables, identified from
-   the reported path going through a clock gating instance.  To fix these,
-   use the clock_enable meta comment described above.
 
    The UNOPTFLAT warning may also occur where outputs from a block of logic
    are independent, but occur in the same always block.  To fix this, use
    the :option:`/*verilator&32;isolate_assignments*/` metacomment described
    above.
 
+   Before version 5.000, the UNOPTFLAT warning may also have been due to
+   clock enables, identified from the reported path going through a clock
+   gating instance.  To fix these, the clock_enable meta comment was used.
+
    To assist in resolving UNOPTFLAT, the option :vlopt:`--report-unoptflat`
    can be used, which will provide suggestions for variables that can be
    split up, and a graph of all the nodes connected in the loop. See the
    Arguments section for more details.
 
-   Ignoring this warning will only slow simulations, it will simulate
+   Ignoring this warning will only slow simulations; it will simulate
    correctly.
 
 
@@ -1463,18 +1585,18 @@ List Of Warnings
 
    .. TODO better example
 
-   Warns that the thread scheduler was unable to partition the design to
-   fill the requested number of threads.
+   Warns that the thread scheduler could not partition the design to fill
+   the requested number of threads.
 
    One workaround is to request fewer threads with :vlopt:`--threads`.
 
    Another possible workaround is to allow more MTasks in the simulation
-   runtime, by increasing the value of :vlopt:`--threads-max-mtasks`. More
+   runtime by increasing the value of :vlopt:`--threads-max-mtasks`. More
    MTasks will result in more communication and synchronization overhead at
    simulation runtime; the scheduler attempts to minimize the number of
    MTasks for this reason.
 
-   Ignoring this warning will only slow simulations, it will simulate
+   Ignoring this warning will only slow simulations; it will simulate
    correctly.
 
 
@@ -1484,7 +1606,7 @@ List Of Warnings
 
    Ignoring this warning will make Verilator treat the structure as packed,
    which may make Verilator simulations differ from other simulators. This
-   downgrading may also result what would normally be a legal unpacked
+   downgrading may also result in what would typically be a legal unpacked
    struct/array inside an unpacked struct/array becoming an illegal
    unpacked struct/array inside a packed struct/array.
 
@@ -1493,42 +1615,65 @@ List Of Warnings
 
    .. TODO better example
 
-   Warns that the code is comparing a unsigned value in a way that implies
-   it is signed, for example "X < 0" will always be false when X is
+   Warns that the code is comparing an unsigned value in a way that implies
+   it is signed; for example :code:`X < 0` will always be false when X is
    unsigned.
 
-   Ignoring this warning will only suppress the lint check, it will
+   Ignoring this warning will only suppress the lint check; it will
    simulate correctly.
 
 
 .. option:: UNSUPPORTED
 
-   Error that a construct might be legal according to IEEE but is not
+   An error that a construct might be legal according to IEEE but is not
    currently supported by Verilator.
 
-   A typical workaround is to rewrite the construct into a simpler and more
-   common alternative language construct.
+   A typical workaround is to rewrite the construct into a more common
+   alternative language construct.
 
-   Alternatively, check if the construct is supported by other tools, and
-   if so please consider submitting a github pull request against the
-   Verilator sources to implement the missing unsupported feature.
+   Alternatively, check if other tools support the construct, and if so,
+   please consider submitting a github pull request against the Verilator
+   sources to implement the missing unsupported feature.
 
-   This error may be ignored with :vlopt:`--bbox-unsup`, however this will
+   This error may be ignored with :vlopt:`--bbox-unsup`, however, this will
    make the design simulate incorrectly and is only intended for lint
    usage; see the details under :vlopt:`--bbox-unsup`.
 
 
 .. option:: UNUSED
 
+   Disabling/enabling UNUSED is equivalent to disabling/enabling the
+   :option:`UNUSEDGENVAR`, :option:`UNUSEDPARAM`, and
+   :option:`UNUSEDSIGNAL` warnings.
+
+   Never issued since version 5.000.  Historically warned that a variable,
+   parameter, or signal was unused.
+
+.. option:: UNUSEDGENVAR
+
    .. TODO better example
 
-   Warns that the specified signal or parameter is never used/consumed.
-   Verilator is fairly liberal in the usage calculations; making a signal
+   Warns that the specified genvar is never used/consumed.
+
+
+.. option:: UNUSEDPARAM
+
+   .. TODO better example
+
+   Warns that the specified parameter is never used/consumed.
+
+
+.. option:: UNUSEDSIGNAL
+
+   .. TODO better example
+
+   Warns that the specified signal is never used/consumed.
+   Verilator is relatively liberal in the usage calculations; making a signal
    public, a signal matching the :vlopt:`--unused-regexp` option (default
    "\*unused\*" or accessing only a single array element marks the entire
    signal as used.
 
-   Disabled by default as this is a code style warning; it will simulate
+   Disabled by default as this is a code-style warning; it will simulate
    correctly.
 
    A recommended style for unused nets is to put at the bottom of a file
@@ -1544,12 +1689,12 @@ List Of Warnings
    The reduction AND and constant zeros mean the net will always be zero,
    so won't use simulation runtime.  The redundant leading and trailing
    zeros avoid syntax errors if there are no signals between them.  The
-   magic name "unused" (controlled by :vlopt:`--unused-regexp` option) is
-   recognized by Verilator and suppresses warnings; if using other lint
-   tools, either teach it to the tool to ignore signals with "unused" in
-   the name, or put the appropriate lint_off around the wire.  Having
-   unused signals in one place makes it easy to find what is unused, and
-   reduces the number of lint_off pragmas, reducing bugs.
+   magic name "unused" (controlled by the :vlopt:`--unused-regexp` option)
+   is recognized by Verilator and suppresses warnings; if using other lint
+   tools, either teach the tool to ignore signals with "unused" in the
+   name, or put the appropriate lint_off around the wire.  Having unused
+   signals in one place makes it easy to find what is unused and reduces
+   the number of lint_off pragmas, reducing bugs.
 
 
 .. option:: USERERROR
@@ -1587,7 +1732,8 @@ List Of Warnings
 .. option:: USERINFO
 
    A SystemVerilog elaboration-time assertion print was executed.  This is
-   not an error nor warning.  IEEE 1800-2017 20.11 requires this behavior.
+   not an error or warning, and IEEE 1800-2017 20.11 requires this
+   behavior.
 
    Example:
 
@@ -1617,11 +1763,11 @@ List Of Warnings
 .. option:: VARHIDDEN
 
    Warns that a task, function, or begin/end block is declaring a variable
-   by the same name as a variable in the upper level module or begin/end
+   by the same name as a variable in the upper-level module or begin/end
    block (thus hiding the upper variable from being able to be used.)
    Rename the variable to avoid confusion when reading the code.
 
-   Disabled by default as this is a code style warning; it will simulate
+   Disabled by default as this is a code-style warning; it will simulate
    correctly.
 
    Faulty example:
@@ -1632,59 +1778,80 @@ List Of Warnings
 
    .. include:: ../../docs/gen/ex_VARHIDDEN_msg.rst
 
-   To resolve, rename the variable to a unique name.
+   To resolve this, rename the variable to an unique name.
+
+
+.. option:: WAITCONST
+
+   .. code-block:: sv
+
+         wait(0);  // Blocks forever
+
+   Warns that a `wait` statement awaits a constant condition, which means it
+   either blocks forever or never blocks.
 
 
 .. option:: WIDTH
 
-   Warns that based on width rules of Verilog:
+   Warns that based on the width rules of Verilog:
 
-   * Two operands have different widths, e.g. adding a 2-bit and 5-bit
+   * Two operands have different widths, e.g., adding a 2-bit and 5-bit
      number.
 
    * A part select has a different size then needed to index into the
-     packed or unpacked array (etc).
+     packed or unpacked array, etc.
 
    Verilator attempts to track the minimum width of unsized constants
    and will suppress the warning when the minimum width is appropriate to
    fit the required size.
 
-   Ignoring this warning will only suppress the lint check, it will
+   Ignoring this warning will only suppress the lint check; it will
    simulate correctly.
 
    The recommendation is to fix these issues by:
 
-   * Resizing the variable or constant to match the needed size for the
-     expression.  E.g. :code:`2'd2` instead of :code:`3'd2`.
+   * Resize the variable or constant to match the needed size for the
+     expression.  E.g., :code:`2'd2` instead of :code:`3'd2`.
 
-   * Using :code:`'0` or :code:`'1` which automatically resize in an
+   * Using :code:`'0` or :code:`'1`, which automatically resize in an
      expression.
 
-   * Using part selects to narrow a variable. E.g. :code:`too_wide[1:0]`.
+   * Using part selects to narrow a variable; e.g., :code:`too_wide[1:0]`.
 
-   * Using concatenate to widen a variable. E.g. :code:`{1'b1, too_narrow}`.
+   * Using concatenate to widen a variable; e.g., :code:`{1'b1, too_narrow}`.
 
-   * Using cast to resize a variable. E.g. :code:`23'(wrong_sized)`.
+   * Using cast to resize a variable; e.g., :code:`23'(wrong_sized)`.
 
-   For example this is a missized index:
+   For example, this is a missized index:
 
-   .. include:: ../../docs/gen/ex_WIDTH_1_faulty.rst
+   .. include:: ../../docs/gen/ex_WIDTHEXPAND_1_faulty.rst
 
-   Results in:
+   Results in a WIDTHEXPAND warning:
 
-   .. include:: ../../docs/gen/ex_WIDTH_1_msg.rst
+   .. include:: ../../docs/gen/ex_WIDTHEXPAND_1_msg.rst
 
    One possible fix:
 
-   .. include:: ../../docs/gen/ex_WIDTH_1_fixed.rst
+   .. include:: ../../docs/gen/ex_WIDTHEXPAND_1_fixed.rst
 
+.. option:: WIDTHTRUNC
+
+   A more granular WIDTH warning, for when a value is truncated
+
+.. option:: WIDTHEXPAND
+
+   A more granular WIDTH warning, for when a value is zero expanded
+
+.. option:: WIDTHXZEXPAND
+
+   A more granular WIDTH warning, for when a value is X/Z expanded
 
 .. option:: WIDTHCONCAT
 
-   Warns that based on width rules of Verilog, a concatenate or replication
-   has an indeterminate width.  In most cases this violates the Verilog
-   rule that widths inside concatenates and replicates must be sized, and
-   should be fixed in the code.
+   Warns that based on the width rules of Verilog, a concatenate, or
+   replication has an indeterminate width.  In most cases, this violates
+   the Verilog rule that widths inside concatenates and replicates must be
+   sized and should be fixed in the code.
 
    Faulty example:
 
@@ -1699,6 +1866,14 @@ List Of Warnings
          parameter PAR = 1;
          wire [63:0] concat = {PAR, PAR};
 
-   The correct fix is to either size the 1 (:code:`32'h1`), or add the
+   The correct fix is to either size the 1 (:code:`32'h1`), add the
    width to the parameter definition (:code:`parameter [31:0]`), or add the
    width to the parameter usage (:code:`{PAR[31:0], PAR[31:0]}`).
+
+
+.. option:: ZERODLY
+
+   Warns that `#0` delays do not schedule the process to be resumed in the
+   Inactive region. Such processes do get resumed in the same time slot
+   somewhere in the Active region. Issued only if Verilator is run with the
+   :vlopt:`--timing` option.

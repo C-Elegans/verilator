@@ -1,4 +1,4 @@
-.. Copyright 2003-2022 by Wilson Snyder.
+.. Copyright 2003-2023 by Wilson Snyder.
 .. SPDX-License-Identifier: LGPL-3.0-only OR Artistic-2.0
 
 Deprecations
@@ -7,18 +7,20 @@ Deprecations
 The following deprecated items are scheduled for future removal:
 
 C++11 compiler support
-  Verilator currently requires C++11 or newer compilers.  Verilator will
-  require C++14 or newer compilers for both compiling Verilator and
-  compiling Verilated models no sooner than January 2023.
+  Verilator currently requires a C++20 or newer compiler for timing, and a
+  C++11 or newer compiler for no-timing.
+
+  Verilator will require C++14 or newer compilers for both compiling
+  Verilator and compiling Verilated models with --no-timing no sooner than
+  January 2023.
+
+  Verilator will require C++20 or newer compilers for both compiling
+  Verilator and compiling all Verilated models no sooner than January 2025.
 
 Verilated_heavy.h
   The legacy "verilated_heavy.h" include was replaced with just including
   "verilated.h". Verilated_heavy.h is planned for removal no sooner than
   July 2022.
-
-Option `--cdc`
-  The experimental `--cdc` option is believed to be generally unused and is
-  planned for removal no sooner than January 2023.
 
 Option `-O<letter>`
   The debug `-O<letter>` options have been replaced with

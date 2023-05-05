@@ -3,7 +3,7 @@
 //
 // Code available from: https://verilator.org
 //
-// Copyright 2000-2022 by Wilson Snyder. This program is free software; you
+// Copyright 2000-2023 by Wilson Snyder. This program is free software; you
 // can redistribute it and/or modify it under the terms of either the GNU
 // Lesser General Public License Version 3 or the Perl Artistic License
 // Version 2.0.
@@ -23,6 +23,7 @@
 #define VERILATOR_VERILATED_SAVE_C_H_
 
 #include "verilatedos.h"
+
 #include "verilated.h"
 
 #include <string>
@@ -61,9 +62,9 @@ public:
         m_bufp = new uint8_t[bufferSize()];
         m_cp = m_bufp;
     }
-    /// Flish, close, and destruct
+    /// Flush, close, and destruct
     virtual ~VerilatedSerialize() {
-        close();
+        // Child classes will need to typically call closeImp() in destructors
         if (m_bufp) VL_DO_CLEAR(delete[] m_bufp, m_bufp = nullptr);
     }
     // METHODS
@@ -77,7 +78,7 @@ public:
     virtual void flush() VL_MT_UNSAFE_ONE {}
     /// Write data to stream
     VerilatedSerialize& write(const void* __restrict datap, size_t size) VL_MT_UNSAFE_ONE {
-        const uint8_t* __restrict dp = (const uint8_t* __restrict)datap;
+        const uint8_t* __restrict dp = static_cast<const uint8_t* __restrict>(datap);
         while (size) {
             bufferCheck();
             size_t blk = size;
@@ -136,7 +137,7 @@ public:
     }
     /// Destruct
     virtual ~VerilatedDeserialize() {
-        close();
+        // Child classes will need to typically call closeImp() in destructors
         if (m_bufp) VL_DO_CLEAR(delete[] m_bufp, m_bufp = nullptr);
     }
     // METHODS
@@ -189,21 +190,24 @@ class VerilatedSave final : public VerilatedSerialize {
 private:
     int m_fd = -1;  // File descriptor we're writing to
 
+    void closeImp() VL_MT_UNSAFE_ONE;
+    void flushImp() VL_MT_UNSAFE_ONE;
+
 public:
     // CONSTRUCTORS
     /// Construct new object
     VerilatedSave() = default;
     /// Flush, close and destruct
-    virtual ~VerilatedSave() override { close(); }
+    ~VerilatedSave() override { closeImp(); }
     // METHODS
     /// Open the file; call isOpen() to see if errors
     void open(const char* filenamep) VL_MT_UNSAFE_ONE;
     /// Open the file; call isOpen() to see if errors
     void open(const std::string& filename) VL_MT_UNSAFE_ONE { open(filename.c_str()); }
     /// Flush and close the file
-    virtual void close() override VL_MT_UNSAFE_ONE;
+    void close() override VL_MT_UNSAFE_ONE { closeImp(); }
     /// Flush data to file
-    virtual void flush() override VL_MT_UNSAFE_ONE;
+    void flush() override VL_MT_UNSAFE_ONE { flushImp(); }
 };
 
 //=============================================================================
@@ -216,12 +220,15 @@ class VerilatedRestore final : public VerilatedDeserialize {
 private:
     int m_fd = -1;  // File descriptor we're writing to
 
+    void closeImp() VL_MT_UNSAFE_ONE;
+    void flushImp() VL_MT_UNSAFE_ONE {}
+
 public:
     // CONSTRUCTORS
     /// Construct new object
     VerilatedRestore() = default;
     /// Flush, close and destruct
-    virtual ~VerilatedRestore() override { close(); }
+    ~VerilatedRestore() override { closeImp(); }
 
     // METHODS
     /// Open the file; call isOpen() to see if errors
@@ -229,9 +236,9 @@ public:
     /// Open the file; call isOpen() to see if errors
     void open(const std::string& filename) VL_MT_UNSAFE_ONE { open(filename.c_str()); }
     /// Close the file
-    virtual void close() override VL_MT_UNSAFE_ONE;
-    virtual void flush() override VL_MT_UNSAFE_ONE {}
-    virtual void fill() override VL_MT_UNSAFE_ONE;
+    void close() override VL_MT_UNSAFE_ONE { closeImp(); }
+    void flush() override VL_MT_UNSAFE_ONE { flushImp(); }
+    void fill() override VL_MT_UNSAFE_ONE;
 };
 
 //=============================================================================
@@ -287,7 +294,8 @@ inline VerilatedDeserialize& operator>>(VerilatedDeserialize& os, std::string& r
     uint32_t len = 0;
     os >> len;
     rhs.resize(len);
-    return os.read((void*)rhs.data(), len);
+    // C cast is required below
+    return os.read((void*)(rhs.data()), len);
 }
 VerilatedSerialize& operator<<(VerilatedSerialize& os, VerilatedContext* rhsp);
 VerilatedDeserialize& operator>>(VerilatedDeserialize& os, VerilatedContext* rhsp);

@@ -6,7 +6,7 @@
 //
 //*************************************************************************
 //
-// Copyright 2003-2022 by Wilson Snyder. This program is free software; you
+// Copyright 2003-2023 by Wilson Snyder. This program is free software; you
 // can redistribute it and/or modify it under the terms of either the GNU
 // Lesser General Public License Version 3 or the Perl Artistic License
 // Version 2.0.
@@ -21,11 +21,13 @@
 #include "V3EmitCConstInit.h"
 #include "V3File.h"
 #include "V3Global.h"
-#include "V3String.h"
 #include "V3Stats.h"
+#include "V3String.h"
 
 #include <algorithm>
 #include <cinttypes>
+
+VL_DEFINE_DEBUG_FUNCTIONS;
 
 //######################################################################
 // Const pool emitter
@@ -38,13 +40,12 @@ class EmitCConstPool final : public EmitCConstInit {
     VDouble0 m_constsEmitted;
 
     // METHODS
-    VL_DEBUG_FUNC;  // Declare debug()
 
     V3OutCFile* newOutCFile() const {
         const string fileName = v3Global.opt.makeDir() + "/" + topClassName() + "__ConstPool_"
                                 + cvtToStr(m_outFileCount) + ".cpp";
         newCFile(fileName, /* slow: */ true, /* source: */ true);
-        V3OutCFile* const ofp = new V3OutCFile(fileName);
+        V3OutCFile* const ofp = new V3OutCFile{fileName};
         ofp->putsHeader();
         ofp->puts("// DESCRIPTION: Verilator output: Constant pool\n");
         ofp->puts("//\n");
@@ -86,7 +87,7 @@ class EmitCConstPool final : public EmitCConstInit {
             puts("extern const ");
             puts(varp->dtypep()->cType(nameProtect, false, false));
             puts(" = ");
-            iterate(varp->valuep());
+            iterateConst(varp->valuep());
             puts(";\n");
             // Keep track of stats
             if (VN_IS(varp->dtypep(), UnpackArrayDType)) {
@@ -100,7 +101,7 @@ class EmitCConstPool final : public EmitCConstInit {
     }
 
     // VISITORS
-    virtual void visit(AstConst* nodep) override {
+    void visit(AstConst* nodep) override {
         m_outFileSize += nodep->num().isString() ? 10 : nodep->isWide() ? nodep->widthWords() : 1;
         EmitCConstInit::visit(nodep);
     }

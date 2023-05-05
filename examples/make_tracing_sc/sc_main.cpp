@@ -10,7 +10,7 @@
 #include <memory>
 
 // SystemC global header
-#include <systemc.h>
+#include <systemc>
 
 // Include common routines
 #include <verilated.h>
@@ -22,6 +22,8 @@
 
 // Include model header, generated from Verilating "top.v"
 #include "Vtop.h"
+
+using namespace sc_core;
 
 int sc_main(int argc, char* argv[]) {
     // This is a more complicated example, please also see the simpler examples/make_hello_c.
@@ -82,15 +84,15 @@ int sc_main(int argc, char* argv[]) {
 
     // You must do one evaluation before enabling waves, in order to allow
     // SystemC to interconnect everything for testing.
-    sc_start(1, SC_NS);
+    sc_start(SC_ZERO_TIME);
 
 #if VM_TRACE
     // If verilator was invoked with --trace argument,
     // and if at run time passed the +trace argument, turn on tracing
     VerilatedVcdSc* tfp = nullptr;
     const char* flag = Verilated::commandArgsPlusMatch("trace");
-    if (flag && 0 == strcmp(flag, "+trace")) {
-        cout << "Enabling waves into logs/vlt_dump.vcd...\n";
+    if (flag && 0 == std::strcmp(flag, "+trace")) {
+        std::cout << "Enabling waves into logs/vlt_dump.vcd...\n";
         tfp = new VerilatedVcdSc;
         top->trace(tfp, 99);  // Trace 99 levels of hierarchy
         Verilated::mkdir("logs");

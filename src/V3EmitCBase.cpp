@@ -6,7 +6,7 @@
 //
 //*************************************************************************
 //
-// Copyright 2003-2022 by Wilson Snyder. This program is free software; you
+// Copyright 2003-2023 by Wilson Snyder. This program is free software; you
 // can redistribute it and/or modify it under the terms of either the GNU
 // Lesser General Public License Version 3 or the Perl Artistic License
 // Version 2.0.
@@ -18,6 +18,7 @@
 #include "verilatedos.h"
 
 #include "V3EmitCBase.h"
+
 #include "V3Task.h"
 
 //######################################################################
@@ -38,7 +39,7 @@ EmitCParentModule::EmitCParentModule() {
 //######################################################################
 // EmitCBaseVisitor implementation
 
-string EmitCBaseVisitor::funcNameProtect(const AstCFunc* nodep, const AstNodeModule* modp) {
+string EmitCBaseVisitorConst::funcNameProtect(const AstCFunc* nodep, const AstNodeModule* modp) {
     modp = modp ? modp : EmitCParentModule::get(nodep);
     string name;
     if (nodep->isConstructor()) {
@@ -56,15 +57,21 @@ string EmitCBaseVisitor::funcNameProtect(const AstCFunc* nodep, const AstNodeMod
     return name;
 }
 
-AstCFile* EmitCBaseVisitor::newCFile(const string& filename, bool slow, bool source) {
-    AstCFile* const cfilep = new AstCFile(v3Global.rootp()->fileline(), filename);
-    cfilep->slow(slow);
-    cfilep->source(source);
+AstCFile* EmitCBaseVisitorConst::newCFile(const string& filename, bool slow, bool source) {
+    AstCFile* const cfilep = createCFile(filename, slow, source);
     v3Global.rootp()->addFilesp(cfilep);
     return cfilep;
 }
 
-string EmitCBaseVisitor::cFuncArgs(const AstCFunc* nodep) {
+AstCFile* EmitCBaseVisitorConst::createCFile(const string& filename, bool slow,
+                                             bool source) VL_MT_SAFE {
+    AstCFile* const cfilep = new AstCFile{v3Global.rootp()->fileline(), filename};
+    cfilep->slow(slow);
+    cfilep->source(source);
+    return cfilep;
+}
+
+string EmitCBaseVisitorConst::cFuncArgs(const AstCFunc* nodep) {
     // Return argument list for given C function
     string args;
     if (nodep->isLoose() && !nodep->isStatic()) {
@@ -94,8 +101,8 @@ string EmitCBaseVisitor::cFuncArgs(const AstCFunc* nodep) {
     return args;
 }
 
-void EmitCBaseVisitor::emitCFuncHeader(const AstCFunc* funcp, const AstNodeModule* modp,
-                                       bool withScope) {
+void EmitCBaseVisitorConst::emitCFuncHeader(const AstCFunc* funcp, const AstNodeModule* modp,
+                                            bool withScope) {
     if (funcp->slow()) puts("VL_ATTR_COLD ");
     if (!funcp->isConstructor() && !funcp->isDestructor()) {
         puts(funcp->rtnTypeVoid());
@@ -113,8 +120,8 @@ void EmitCBaseVisitor::emitCFuncHeader(const AstCFunc* funcp, const AstNodeModul
     if (funcp->isConst().trueKnown() && funcp->isProperMethod()) puts(" const");
 }
 
-void EmitCBaseVisitor::emitCFuncDecl(const AstCFunc* funcp, const AstNodeModule* modp,
-                                     bool cLinkage) {
+void EmitCBaseVisitorConst::emitCFuncDecl(const AstCFunc* funcp, const AstNodeModule* modp,
+                                          bool cLinkage) {
     ensureNewLine();
     if (!funcp->ifdef().empty()) puts("#ifdef " + funcp->ifdef() + "\n");
     if (cLinkage) puts("extern \"C\" ");
@@ -128,7 +135,7 @@ void EmitCBaseVisitor::emitCFuncDecl(const AstCFunc* funcp, const AstNodeModule*
     if (!funcp->ifdef().empty()) puts("#endif  // " + funcp->ifdef() + "\n");
 }
 
-void EmitCBaseVisitor::emitVarDecl(const AstVar* nodep, bool asRef) {
+void EmitCBaseVisitorConst::emitVarDecl(const AstVar* nodep, bool asRef) {
     const AstBasicDType* const basicp = nodep->basicp();
     bool refNeedParens = VN_IS(nodep->dtypeSkipRefp(), UnpackArrayDType);
 
@@ -209,14 +216,14 @@ void EmitCBaseVisitor::emitVarDecl(const AstVar* nodep, bool asRef) {
             // Issue 2622.
             const bool beStatic = name.size() >= suffix.size()
                                   && name.substr(name.size() - suffix.size()) == suffix;
-            if (beStatic) puts("static VL_THREAD_LOCAL ");
+            if (beStatic) puts("static thread_local ");
         }
         puts(nodep->vlArgType(true, false, false, "", asRef));
         puts(";\n");
     }
 }
 
-void EmitCBaseVisitor::emitModCUse(const AstNodeModule* modp, VUseType useType) {
+void EmitCBaseVisitorConst::emitModCUse(const AstNodeModule* modp, VUseType useType) {
     string nl;
     for (AstNode* itemp = modp->stmtsp(); itemp; itemp = itemp->nextp()) {
         if (AstCUse* const usep = VN_CAST(itemp, CUse)) {
@@ -234,7 +241,7 @@ void EmitCBaseVisitor::emitModCUse(const AstNodeModule* modp, VUseType useType) 
     puts(nl);
 }
 
-void EmitCBaseVisitor::emitTextSection(const AstNodeModule* modp, VNType type) {
+void EmitCBaseVisitorConst::emitTextSection(const AstNodeModule* modp, VNType type) {
     // Short circuit if nothing to do. This can save a lot of time on large designs as this
     // function needs to traverse the entire module linearly.
     if (!v3Global.hasSCTextSections()) return;

@@ -14,7 +14,7 @@ scenarios(vltmt => 1);
 top_filename("t/t_gen_alw.v");
 
 compile(
-    v_flags2 => ["--debug --debugi 5"],
+    v_flags2 => ["--dumpi-graph 6"],
     threads => 2
     );
 
@@ -23,7 +23,7 @@ foreach my $dotname ("linkcells", "task_call", "gate_simp", "gate_opt",
         "ordermv_initial", "ordermv_hazards", "ordermv_contraction",
         "ordermv_transitive1", "orderg_done", "ordermv_transitive2", "schedule") {
     # Some files with identical prefix are generated multiple times during
-    # verilation. Ensure that at least one of each $dotname-prefixed file is generated.
+    # Verilation. Ensure that at least one of each $dotname-prefixed file is generated.
     @dotFiles = glob("$Self->{obj_dir}/*$dotname.dot");
     if (scalar @dotFiles == 0) {
         error("Found no dotfiles with pattern *$dotname.dot");

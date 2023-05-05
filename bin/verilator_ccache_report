@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# pylint: disable=C0103,C0114,C0115,C0116,C0123,C0301,R0902,R0913,R0914,R0912,R0915,W0621
+# pylint: disable=C0103,C0114,C0115,C0116,C0123,C0209,C0301,R0902,R0913,R0914,R0912,R0915,W0621
 ######################################################################
 
 import argparse
@@ -12,9 +12,12 @@ from datetime import datetime
 parser = argparse.ArgumentParser(
     allow_abbrev=False,
     formatter_class=argparse.RawDescriptionHelpFormatter,
-    description="""Report ccache behavior of a Verilated model build.""",
+    description="""Report ccache behavior of a Verilated model build.
+
+    For documentation see
+    https://verilator.org/guide/latest/exe_verilator_ccache_report.html""",
     epilog=
-    """Copyright 2002-2022 by Wilson Snyder. This program is free software; you
+    """Copyright 2002-2023 by Wilson Snyder. This program is free software; you
 can redistribute it and/or modify it under the terms of either the GNU
 Lesser General Public License Version 3 or the Perl Artistic License
 Version 2.0.

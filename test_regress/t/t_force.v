@@ -6,6 +6,7 @@
 
 `define stop $stop
 `define checkh(gotv,expv) do if ((gotv) !== (expv)) begin $write("%%Error: %s:%0d:  got='h%x exp='h%x\n", `__FILE__,`__LINE__, (gotv), (expv)); `stop; end while(0)
+`define checkr(gotv,expv) do if ((gotv) != (expv)) begin $write("%%Error: %s:%0d:  got=%f exp=%f\n", `__FILE__,`__LINE__, (gotv), (expv)); $stop; end while(0);
 
 module t(/*AUTOARG*/
    // Inputs
@@ -20,6 +21,8 @@ module t(/*AUTOARG*/
 
    int        never_driven;
    int        never_forced;
+
+   real       r;
 
    task force_bus;
       force bus[1:0] = 2'b10;
@@ -45,6 +48,7 @@ module t(/*AUTOARG*/
       else if (cyc == 2) begin
          `checkh(never_driven, 32'h888);
       end
+      //
       // Check release with no force
       else if (cyc == 10) begin
          never_forced <= 5432;
@@ -60,37 +64,57 @@ module t(/*AUTOARG*/
       end
       //
       // bus
-      else if (cyc == 10) begin
+      else if (cyc == 20) begin
          `checkh(bus, 4'b0101);
          force bus = 4'b0111;
       end
-      else if (cyc == 11) begin
+      else if (cyc == 21) begin
          `checkh(bus, 4'b0111);
          force bus = 4'b1111;
       end
-      else if (cyc == 12) begin
+      else if (cyc == 22) begin
          `checkh(bus, 4'b1111);
          release bus;
       end
-      else if (cyc == 13) begin
+      else if (cyc == 23) begin
          `checkh(bus, 4'b0101);
       end
-      else if (cyc == 20) begin
+      //
+      else if (cyc == 30) begin
          force_bus();
       end
-      else if (cyc == 21) begin
+      else if (cyc == 31) begin
          `checkh(bus, 4'b0110);
       end
-      else if (cyc == 22) begin
+      else if (cyc == 32) begin
          release bus[0];
       end
-      else if (cyc == 23) begin
+      else if (cyc == 33) begin
          `checkh(bus, 4'b0111);
          release_bus();
       end
-      else if (cyc == 24) begin
+      else if (cyc == 34) begin
          `checkh(in, 4'b0101);
          `checkh(bus, 4'b0101);
+      end
+      //
+      else if (cyc == 40) begin
+         r <= 1.25;
+      end
+      else if (cyc == 41) begin
+         `checkr(r, 1.25);
+      end
+      else if (cyc == 42) begin
+         force r = 2.5;
+      end
+      else if (cyc == 43) begin
+         `checkr(r, 2.5);
+      end
+      else if (cyc == 44) begin
+         release r;
+      end
+      else if (cyc == 45) begin
+         `checkr(r, 1.25);
       end
       //
       else if (cyc == 99) begin

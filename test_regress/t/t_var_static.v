@@ -6,6 +6,16 @@
 
 `define checkh(gotv,expv) do if ((gotv) !== (expv)) begin $write("%%Error: %s:%0d:  got='h%x exp='h%x\n", `__FILE__,`__LINE__, (gotv), (expv)); $stop; end while(0);
 
+function automatic int f_au_st_global ();
+   static int st = 0; st++; return st;
+endfunction
+
+package my_pkg;
+   function int f_no_st_pkg ();
+      static int st = 0; st++; return st;
+   endfunction
+endpackage
+
 module t (/*AUTOARG*/
    // Inputs
    clk
@@ -42,10 +52,17 @@ module t (/*AUTOARG*/
    function automatic int f_au_au ();
       automatic int au = 2; au++; return au;
    endfunction
+   string plusarg                 = "";
+   bit has_plusarg                = |($value$plusargs("plusarg=%s", plusarg));
 
    int v;
 
    initial begin
+      if (has_plusarg) begin
+        if (plusarg == "") begin
+          $fatal(1, "%m: +plusarg must not be empty");
+        end
+      end
       v = f_no_no(); `checkh(v, 3);
       v = f_no_no(); `checkh(v,   4);
       v = f_no_st(); `checkh(v, 3);
@@ -66,6 +83,11 @@ module t (/*AUTOARG*/
       v = f_au_st(); `checkh(v,   4);
       v = f_au_au(); `checkh(v, 3);
       v = f_au_au(); `checkh(v,   3);
+      //
+      v = f_au_st_global(); `checkh(v, 1);
+      v = f_au_st_global(); `checkh(v,   2);
+      v = my_pkg::f_no_st_pkg(); `checkh(v, 1);
+      v = my_pkg::f_no_st_pkg(); `checkh(v,   2);
       //
    end
 

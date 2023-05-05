@@ -24,6 +24,7 @@ module t;
    reg [16*8:1] letterz;
    real         r;
    string       s;
+   reg [16*8:1] si;
    integer      i;
 
    reg [7:0]    v_a,v_b,v_c,v_d;
@@ -73,10 +74,7 @@ module t;
       $fflush;
 
       $fclose(file);
-`ifdef verilator
-      if (file != 0) $stop(1);  // Also test arguments to stop
       $fwrite(file, "Never printed, file closed\n");
-`endif
 
       begin
          // Check for opening errors
@@ -88,6 +86,9 @@ module t;
          i = $ferror(file, s);
          `checkh(i, 2);
          `checks(s, "No such file or directory");
+         si = "xx";
+         i = $ferror(file, si);
+         `checkh(i, 2);
       end
 
       begin

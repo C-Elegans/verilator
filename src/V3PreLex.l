@@ -5,7 +5,7 @@
  *
  **************************************************************************
  *
- * Copyright 2003-2022 by Wilson Snyder. This program is free software; you
+ * Copyright 2003-2023 by Wilson Snyder. This program is free software; you
  * can redistribute it and/or modify it under the terms of either the
  * GNU Lesser General Public License Version 3 or the Perl Artistic License
  * Version 2.0.
@@ -65,23 +65,24 @@ static void appendDefValue(const char* t, size_t l) { LEXP->appendDefValue(t, l)
 /**********************************************************************/
 %}
 
-%x CMTONEM
+%x ARGMODE
 %x CMTBEGM
 %x CMTMODE
-%x STRMODE
-%x DEFFPAR
-%x DEFFORM
-%x DEFVAL
+%x CMTONEM
 %x DEFCMT
-%x STRIFY
-%x ARGMODE
+%x DEFFORM
+%x DEFFPAR
+%x DEFVAL
+%x ENCBASE64
 %x INCMODE
-%x PRTMODE
 %x PRAGMA
 %x PRAGMAERR
 %x PRAGMAPRT
 %x PRAGMAPRTERR
-%x ENCBASE64
+%x PRTMODE
+%x QQQMODE
+%x STRIFY
+%x STRMODE
 
 /* drop: Drop Ctrl-Z - can't pass thru or may EOF the output too soon */
 
@@ -126,7 +127,7 @@ bom             [\357\273\277]
                           if (LEXP->m_protBytes > 0) {
                               LEXP->curFilelinep()->v3warn(BADSTDPRAGMA, "multiple `pragma protected encoding sections");
                           }
-                          res = sscanf(yytext + strlen("encoding"), " = (enctype = \"%15[A-Za-z0-9]\", line_length = %d, bytes = %d)", &enctype[0], &LEXP->m_protLength, &LEXP->m_protBytes);
+                          res = sscanf(yytext + std::strlen("encoding"), " = (enctype = \"%15[A-Za-z0-9]\", line_length = %d, bytes = %d)", &enctype[0], &LEXP->m_protLength, &LEXP->m_protBytes);
                           if (res == 0)
                               LEXP->curFilelinep()->v3warn(BADSTDPRAGMA, "`pragma protected encoding must have an \"enctype\" field");
                           LEXP->m_encType = !VL_STRCASECMP(enctype, "uuencode") ? Enctype::UUENCODE :
@@ -242,7 +243,7 @@ bom             [\357\273\277]
 <INITIAL,STRIFY>"`__LINE__"     { FL_FWDC;
                           static char buf[25];
                           VL_SNPRINTF(buf, 25, "%d", LEXP->curFilelinep()->lastLineno());
-                          yytext = buf; yyleng = strlen(yytext);
+                          yytext = buf; yyleng = std::strlen(yytext);
                           return VP_TEXT; }
 
         /* Pass-through strings */
@@ -257,6 +258,23 @@ bom             [\357\273\277]
 <STRMODE>[\\]{wsn}+{crnl}  { LEXP->warnBackslashSpace(); yyless(1); }
 <STRMODE>[\\].          { yymore(); }
 <STRMODE>{quote}        { FL_FWDC; yy_pop_state();
+                          if (LEXP->m_parenLevel || LEXP->m_defQuote) {
+                              LEXP->m_defQuote=false; appendDefValue(yytext, yyleng);
+                              yyleng=0; FL_BRK;
+                          } else return VP_STRING; }
+
+        /* Pass-through quote-quote-quote */
+<INITIAL>{quote}{quote}{quote}        { yy_push_state(QQQMODE); yymore(); }
+<QQQMODE><<EOF>>        { FL_FWDC; linenoInc(); yyerrorf("EOF in unterminated \"\"\" string");
+                          yyleng=0; return VP_EOF_ERROR; }
+<QQQMODE>{crnl}         { FL_FWDC; linenoInc(); yymore(); }
+<QQQMODE>{word}         { yymore(); }
+<QQQMODE>[^\"\\]        { yymore(); }
+<QQQMODE>[\\]{crnl}     { linenoInc(); yymore(); }
+<QQQMODE>[\\]{wsn}+{crnl}  { LEXP->warnBackslashSpace(); yyless(1); }
+<QQQMODE>[\\].          { yymore(); }
+<QQQMODE>.              { yymore(); }
+<QQQMODE>{quote}{quote}{quote}        { FL_FWDC; yy_pop_state();
                           if (LEXP->m_parenLevel || LEXP->m_defQuote) {
                               LEXP->m_defQuote=false; appendDefValue(yytext, yyleng);
                               yyleng=0; FL_BRK;
@@ -319,6 +337,7 @@ bom             [\357\273\277]
 <DEFFORM>[\\]{wsn}+{crnl}  { LEXP->warnBackslashSpace(); yyless(1); }
 <DEFFORM>[\\]{crnl}     { FL_FWDC; linenoInc(); appendDefValue((char*)"\\\n", 2); FL_BRK; }  /* Include return so can maintain output line count */
 <DEFFORM>{quote}        { LEXP->m_defQuote=true; yy_push_state(STRMODE); yymore(); }  /* Legal only in default values */
+<DEFFORM>{quote}{quote}{quote}   { LEXP->m_defQuote=true; yy_push_state(QQQMODE); yymore(); }  /* Legal only in default values */
 <DEFFORM>"`\\`\""       { FL_FWDC; appendDefValue(yytext, yyleng); FL_BRK; }  /* Maybe illegal, otherwise in default value */
 <DEFFORM>{tickquote}    { FL_FWDC; appendDefValue(yytext, yyleng); FL_BRK; }  /* Maybe illegal, otherwise in default value */
 <DEFFORM>[{\[]          { FL_FWDC; LEXP->m_formalLevel++; appendDefValue(yytext, yyleng); FL_BRK; }
@@ -337,6 +356,7 @@ bom             [\357\273\277]
 <DEFVAL>[\\]{wsn}+{crnl}  { LEXP->warnBackslashSpace(); yyless(1); }
 <DEFVAL>[\\]{crnl}      { FL_FWDC; linenoInc(); appendDefValue((char*)"\\\n", 2); FL_BRK; }  /* Return, AND \ is part of define value */
 <DEFVAL>{quote}         { LEXP->m_defQuote = true; yy_push_state(STRMODE); yymore(); }
+<DEFVAL>{quote}{quote}{quote}   { LEXP->m_defQuote = true; yy_push_state(QQQMODE); yymore(); }
 <DEFVAL>[^\/\*\n\r\\\"]+        |
 <DEFVAL>[\\][^\n\r]     |
 <DEFVAL>.               { FL_FWDC; appendDefValue(yytext, yyleng); FL_BRK; }
@@ -364,6 +384,7 @@ bom             [\357\273\277]
                           yyleng = 0; return VP_EOF_ERROR; }
 <ARGMODE>{crnl}         { FL_FWDC; linenoInc(); yytext=(char*)"\n"; yyleng=1; return VP_WHITE; }
 <ARGMODE>{quote}        { yy_push_state(STRMODE); yymore(); }
+<ARGMODE>{quote}{quote}{quote}    { yy_push_state(QQQMODE); yymore(); }
 <ARGMODE>"`\\`\""       { FL_FWDC; appendDefValue(yytext, yyleng); FL_BRK; }  /* Literal text */
 <ARGMODE>{tickquote}    { FL_FWDC; yy_push_state(STRIFY); return VP_STRIFY; }
 <ARGMODE>[{\[]          { FL_FWDC; LEXP->m_parenLevel++; appendDefValue(yytext, yyleng); FL_BRK; }
@@ -462,11 +483,8 @@ void V3PreLex::pushStateIncFilename() {
     yymore();
 }
 
-void V3PreLex::debug(int level) {
-    yy_flex_debug = level;  // Use --debugi-V3PreShell, if level<5 this level is 0
-}
-int V3PreLex::debug() {
-    return yy_flex_debug; }
+void V3PreLex::setYYDebug(bool on) {
+    yy_flex_debug = static_cast<int>(on); }
 
 int V3PreLex::lex() {
     V3PreLex::s_currentLexp = this;  // Tell parser where to get/put data
@@ -618,7 +636,7 @@ void V3PreLex::scanNewFile(FileLine* filelinep) {
 
 void V3PreLex::scanBytes(const string& str) {
     // Note buffers also appended in ::scanBytesBack
-    // Not "m_buffers.push_front(string{strp,len})" as we need a `define
+    // Not "m_buffers.push_front(std::string{strp,len})" as we need a `define
     // to take effect immediately, in the middle of the current buffer
     // Also we don't use scan_bytes that would set yy_fill_buffer
     // which would force Flex to bypass our YY_INPUT routine.
@@ -702,11 +720,11 @@ void V3PreLex::dumpStack() {
 }
 
 string V3PreLex::cleanDbgStrg(const string& in) {
-    string out = in;
+    string result = in;
     string::size_type pos;
-    while ((pos = out.find('\n')) != string::npos) { out.replace(pos, 1, "\\n"); }
-    while ((pos = out.find('\r')) != string::npos) { out.replace(pos, 1, "\\r"); }
-    return out;
+    while ((pos = result.find('\n')) != string::npos) result.replace(pos, 1, "\\n");
+    while ((pos = result.find('\r')) != string::npos) result.replace(pos, 1, "\\r");
+    return result;
 }
 
 void V3PreLex::unused() {

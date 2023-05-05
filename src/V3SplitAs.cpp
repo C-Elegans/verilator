@@ -6,7 +6,7 @@
 //
 //*************************************************************************
 //
-// Copyright 2003-2022 by Wilson Snyder. This program is free software; you
+// Copyright 2003-2023 by Wilson Snyder. This program is free software; you
 // can redistribute it and/or modify it under the terms of either the GNU
 // Lesser General Public License Version 3 or the Perl Artistic License
 // Version 2.0.
@@ -24,19 +24,21 @@
 #include "config_build.h"
 #include "verilatedos.h"
 
-#include "V3Global.h"
 #include "V3SplitAs.h"
-#include "V3Stats.h"
+
 #include "V3Ast.h"
+#include "V3Global.h"
+#include "V3Stats.h"
 
 #include <map>
+
+VL_DEFINE_DEBUG_FUNCTIONS;
 
 //######################################################################
 
 class SplitAsBaseVisitor VL_NOT_FINAL : public VNVisitor {
 public:
     // METHODS
-    VL_DEBUG_FUNC;  // Declare debug()
 };
 
 //######################################################################
@@ -48,17 +50,17 @@ private:
     AstVarScope* m_splitVscp = nullptr;  // Variable we want to split
 
     // METHODS
-    virtual void visit(AstVarRef* nodep) override {
+    void visit(AstVarRef* nodep) override {
         if (nodep->access().isWriteOrRW() && !m_splitVscp && nodep->varp()->attrIsolateAssign()) {
             m_splitVscp = nodep->varScopep();
         }
     }
-    virtual void visit(AstNode* nodep) override { iterateChildren(nodep); }
+    void visit(AstNode* nodep) override { iterateChildren(nodep); }
 
 public:
     // CONSTRUCTORS
     explicit SplitAsFindVisitor(AstAlways* nodep) { iterate(nodep); }
-    virtual ~SplitAsFindVisitor() override = default;
+    ~SplitAsFindVisitor() override = default;
     // METHODS
     AstVarScope* splitVscp() const { return m_splitVscp; }
 };
@@ -75,7 +77,7 @@ private:
     bool m_matches = false;  // Statement below has matching lvalue reference
 
     // METHODS
-    virtual void visit(AstVarRef* nodep) override {
+    void visit(AstVarRef* nodep) override {
         if (nodep->access().isWriteOrRW()) {
             if (nodep->varScopep() == m_splitVscp) {
                 UINFO(6, "       CL VAR " << nodep << endl);
@@ -83,11 +85,7 @@ private:
             }
         }
     }
-    virtual void visit(AstNodeStmt* nodep) override {
-        if (!nodep->isStatement()) {
-            iterateChildren(nodep);
-            return;
-        }
+    void visit(AstNodeStmt* nodep) override {
         UINFO(6, "     CL STMT " << nodep << endl);
         const bool oldKeep = m_keepStmt;
         {
@@ -109,7 +107,7 @@ private:
         m_keepStmt = oldKeep || m_keepStmt;
         UINFO(9, "     upKeep=" << m_keepStmt << " STMT " << nodep << endl);
     }
-    virtual void visit(AstNode* nodep) override { iterateChildren(nodep); }
+    void visit(AstNode* nodep) override { iterateChildren(nodep); }
 
 public:
     // CONSTRUCTORS
@@ -118,7 +116,7 @@ public:
         , m_modeMatch{modeMatch} {
         iterate(nodep);
     }
-    virtual ~SplitAsCleanVisitor() override = default;
+    ~SplitAsCleanVisitor() override = default;
 };
 
 //######################################################################
@@ -138,22 +136,22 @@ private:
     void splitAlways(AstAlways* nodep) {
         UINFO(3, "Split  " << nodep << endl);
         UINFO(3, "   For " << m_splitVscp << endl);
-        if (debug() >= 9) nodep->dumpTree(cout, "-in  : ");
+        if (debug() >= 9) nodep->dumpTree("-  in: ");
         // Duplicate it and link in
         AstAlways* const newp = nodep->cloneTree(false);
         newp->user1(true);  // So we don't clone it again
         nodep->addNextHere(newp);
         {  // Delete stuff we don't want in old
             const SplitAsCleanVisitor visitor{nodep, m_splitVscp, false};
-            if (debug() >= 9) nodep->dumpTree(cout, "-out0: ");
+            if (debug() >= 9) nodep->dumpTree("-  out0: ");
         }
         {  // Delete stuff we don't want in new
             const SplitAsCleanVisitor visitor{newp, m_splitVscp, true};
-            if (debug() >= 9) newp->dumpTree(cout, "-out1: ");
+            if (debug() >= 9) newp->dumpTree("-  out1: ");
         }
     }
 
-    virtual void visit(AstAlways* nodep) override {
+    void visit(AstAlways* nodep) override {
         // Are there any lvalue references below this?
         // There could be more than one.  So, we process the first one found first.
         const AstVarScope* lastSplitVscp = nullptr;
@@ -177,14 +175,13 @@ private:
         }
     }
 
-    // Speedup; no always under math
-    virtual void visit(AstNodeMath*) override {}
-    virtual void visit(AstNode* nodep) override { iterateChildren(nodep); }
+    void visit(AstNodeExpr*) override {}  // Accelerate
+    void visit(AstNode* nodep) override { iterateChildren(nodep); }
 
 public:
     // CONSTRUCTORS
     explicit SplitAsVisitor(AstNetlist* nodep) { iterate(nodep); }
-    virtual ~SplitAsVisitor() override {
+    ~SplitAsVisitor() override {
         V3Stats::addStat("Optimizations, isolate_assignments blocks", m_statSplits);
     }
 };
@@ -195,5 +192,5 @@ public:
 void V3SplitAs::splitAsAll(AstNetlist* nodep) {
     UINFO(2, __FUNCTION__ << ": " << endl);
     { SplitAsVisitor{nodep}; }  // Destruct before checking
-    V3Global::dumpCheckGlobalTree("splitas", 0, v3Global.opt.dumpTreeLevel(__FILE__) >= 3);
+    V3Global::dumpCheckGlobalTree("splitas", 0, dumpTreeLevel() >= 3);
 }

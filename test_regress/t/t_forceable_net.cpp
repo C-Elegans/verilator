@@ -4,10 +4,11 @@
 // any use, without warranty, 2021 by Geza Lore.
 // SPDX-License-Identifier: CC0-1.0
 
-#include <memory>
-
 #include "verilatedos.h"
+
 #include "verilated.h"
+
+#include <memory>
 #if VM_TRACE
 #include "verilated_vcd_c.h"
 #endif
@@ -17,8 +18,8 @@
 
 int main(int argc, char** argv) {
     const std::unique_ptr<VerilatedContext> contextp{new VerilatedContext};
-    contextp->commandArgs(argc, argv);
     contextp->debug(0);
+    contextp->commandArgs(argc, argv);
     srand48(5);
 
     const std::unique_ptr<VM_PREFIX> topp{new VM_PREFIX{"top"}};

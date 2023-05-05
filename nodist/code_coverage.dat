@@ -1,7 +1,7 @@
 # -*- Python -*-
 # DESCRIPTION: Verilator: Internal C++ code lcov control file
 #
-# Copyright 2019-2022 by Wilson Snyder. This program is free software; you
+# Copyright 2019-2023 by Wilson Snyder. This program is free software; you
 # can redistribute it and/or modify it under the terms of either the GNU
 # Lesser General Public License Version 3 or the Perl Artistic License
 # Version 2.0.
@@ -48,6 +48,7 @@ exclude_line_regexp(r'\bNUM_ASSERT')
 exclude_line_regexp(r'\bERROR_RSVD_WORD')
 exclude_line_regexp(r'\bV3ERROR_NA')
 exclude_line_regexp(r'\bUINFO\b')
+exclude_line_regexp(r'\bVL_DEFINE_DEBUG_FUNCTIONS\b')
 
 # Exclude for branch coverage only
 exclude_branch_regexp(r'\bdebug\(\)')

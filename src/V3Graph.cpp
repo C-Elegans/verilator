@@ -6,7 +6,7 @@
 //
 //*************************************************************************
 //
-// Copyright 2003-2022 by Wilson Snyder. This program is free software; you
+// Copyright 2003-2023 by Wilson Snyder. This program is free software; you
 // can redistribute it and/or modify it under the terms of either the GNU
 // Lesser General Public License Version 3 or the Perl Artistic License
 // Version 2.0.
@@ -17,9 +17,10 @@
 #include "config_build.h"
 #include "verilatedos.h"
 
-#include "V3Global.h"
-#include "V3File.h"
 #include "V3Graph.h"
+
+#include "V3File.h"
+#include "V3Global.h"
 
 #include <map>
 #include <memory>
@@ -27,8 +28,7 @@
 #include <unordered_set>
 #include <vector>
 
-int V3Graph::s_debug = 0;
-int V3Graph::debug() { return std::max(V3Error::debugDefault(), s_debug); }
+VL_DEFINE_DEBUG_FUNCTIONS;
 
 //######################################################################
 //######################################################################
@@ -80,9 +80,9 @@ void V3GraphVertex::rerouteEdges(V3Graph* graphp) {
     // Make new edges for each from/to pair
     for (V3GraphEdge* iedgep = inBeginp(); iedgep; iedgep = iedgep->inNextp()) {
         for (V3GraphEdge* oedgep = outBeginp(); oedgep; oedgep = oedgep->outNextp()) {
-            new V3GraphEdge(graphp, iedgep->fromp(), oedgep->top(),
+            new V3GraphEdge{graphp, iedgep->fromp(), oedgep->top(),
                             std::min(iedgep->weight(), oedgep->weight()),
-                            iedgep->cutable() && oedgep->cutable());
+                            iedgep->cutable() && oedgep->cutable()};
         }
     }
     // Remove old edges
@@ -128,7 +128,8 @@ V3GraphEdge* V3GraphVertex::findConnectingEdgep(GraphWay way, const V3GraphVerte
     return nullptr;
 }
 
-void V3GraphVertex::v3errorEnd(std::ostringstream& str) const {
+// cppcheck-has-bug-suppress constParameter
+void V3GraphVertex::v3errorEnd(std::ostringstream& str) const VL_REQUIRES(V3Error::s().m_mutex) {
     std::ostringstream nsstr;
     nsstr << str.str();
     if (debug()) {
@@ -138,13 +139,14 @@ void V3GraphVertex::v3errorEnd(std::ostringstream& str) const {
     if (FileLine* const flp = fileline()) {
         flp->v3errorEnd(nsstr);
     } else {
-        V3Error::v3errorEnd(nsstr);
+        V3Error::s().v3errorEnd(nsstr);
     }
 }
-void V3GraphVertex::v3errorEndFatal(std::ostringstream& str) const {
+void V3GraphVertex::v3errorEndFatal(std::ostringstream& str) const
+    VL_REQUIRES(V3Error::s().m_mutex) {
     v3errorEnd(str);
     assert(0);  // LCOV_EXCL_LINE
-    VL_UNREACHABLE
+    VL_UNREACHABLE;
 }
 
 std::ostream& operator<<(std::ostream& os, V3GraphVertex* vertexp) {
@@ -159,7 +161,7 @@ std::ostream& operator<<(std::ostream& os, V3GraphVertex* vertexp) {
 //######################################################################
 // Edges
 
-void V3GraphEdge::init(V3Graph* graphp, V3GraphVertex* fromp, V3GraphVertex* top, int weight,
+void V3GraphEdge::init(V3Graph* /*graphp*/, V3GraphVertex* fromp, V3GraphVertex* top, int weight,
                        bool cutable) {
     UASSERT(fromp, "Null from pointer");
     UASSERT(top, "Null to pointer");
@@ -178,6 +180,14 @@ V3GraphEdge* V3GraphEdge::relinkFromp(V3GraphVertex* newFromp) {
     m_outs.unlink(m_fromp->m_outs, this);
     m_fromp = newFromp;
     outPushBack();
+    return oldNxt;
+}
+
+V3GraphEdge* V3GraphEdge::relinkTop(V3GraphVertex* newTop) {
+    V3GraphEdge* oldNxt = inNextp();
+    m_ins.unlink(m_top->m_ins, this);
+    m_top = newTop;
+    inPushBack();
     return oldNxt;
 }
 
@@ -292,7 +302,7 @@ void V3Graph::dump(std::ostream& os) {
     }
 }
 
-void V3Graph::dumpEdge(std::ostream& os, V3GraphVertex* vertexp, V3GraphEdge* edgep) {
+void V3Graph::dumpEdge(std::ostream& os, const V3GraphVertex* vertexp, const V3GraphEdge* edgep) {
     if (edgep->weight() && (edgep->fromp() == vertexp || edgep->top() == vertexp)) {
         os << "\t\t";
         if (edgep->fromp() == vertexp) os << "-> " << edgep->top()->name();
@@ -303,9 +313,7 @@ void V3Graph::dumpEdge(std::ostream& os, V3GraphVertex* vertexp, V3GraphEdge* ed
 }
 
 void V3Graph::dumpDotFilePrefixed(const string& nameComment, bool colorAsSubgraph) const {
-    if (v3Global.opt.dumpTree()) {
-        dumpDotFile(v3Global.debugFilename(nameComment) + ".dot", colorAsSubgraph);
-    }
+    dumpDotFile(v3Global.debugFilename(nameComment) + ".dot", colorAsSubgraph);
 }
 
 //! Variant of dumpDotFilePrefixed without --dump option check

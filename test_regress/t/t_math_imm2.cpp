@@ -4,6 +4,7 @@
 // SPDX-License-Identifier: CC0-1.0
 
 #include <verilated.h>
+
 #include "Vt_math_imm2.h"
 
 double sc_time_stamp() { return 0; }
@@ -16,8 +17,9 @@ QData MaskVal(int lbit, int hbit) {
 
 int main(int argc, char* argv[]) {
     Verilated::debug(0);
+    Verilated::commandArgs(argc, argv);
 
-    Vt_math_imm2* sim = new Vt_math_imm2;
+    VM_PREFIX* sim = new VM_PREFIX;
     int lbit, hbit;
 
     int errs = 0;

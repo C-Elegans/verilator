@@ -6,7 +6,7 @@
 //
 //*************************************************************************
 //
-// Copyright 2010-2022 by Wilson Snyder. This program is free software; you
+// Copyright 2010-2023 by Wilson Snyder. This program is free software; you
 // can redistribute it and/or modify it under the terms of either the GNU
 // Lesser General Public License Version 3 or the Perl Artistic License
 // Version 2.0.
@@ -17,14 +17,17 @@
 #include "config_build.h"
 #include "verilatedos.h"
 
+#include "V3Config.h"
+
 #include "V3Global.h"
 #include "V3String.h"
-#include "V3Config.h"
 
 #include <map>
 #include <set>
 #include <string>
 #include <unordered_map>
+
+VL_DEFINE_DEBUG_FUNCTIONS;
 
 //######################################################################
 // Resolve wildcards in files, modules, ftasks or variables
@@ -33,28 +36,35 @@
 // as wildcards and are accessed by a resolved name. It rebuilds a name lookup
 // cache of resolved entities. Entities stored in this container need an update
 // function that takes a reference of this type to join multiple entities into one.
-template <typename T> class V3ConfigWildcardResolver {
+template <typename T>
+class V3ConfigWildcardResolver final {
     using Map = std::map<const std::string, T>;
 
-    Map m_mapWildcard;  // Wildcard strings to entities
-    Map m_mapResolved;  // Resolved strings to converged entities
+    mutable V3Mutex m_mutex;  // protects members
+    Map m_mapWildcard VL_GUARDED_BY(m_mutex);  // Wildcard strings to entities
+    Map m_mapResolved VL_GUARDED_BY(m_mutex);  // Resolved strings to converged entities
 public:
     V3ConfigWildcardResolver() = default;
     ~V3ConfigWildcardResolver() = default;
 
     /// Update into maps from other
-    void update(const V3ConfigWildcardResolver& other) {
+    void update(const V3ConfigWildcardResolver& other) VL_MT_SAFE_EXCLUDES(m_mutex)
+        VL_EXCLUDES(other.m_mutex) {
+        V3LockGuard lock{m_mutex};
+        V3LockGuard otherLock{other.m_mutex};
         for (const auto& itr : other.m_mapResolved) m_mapResolved[itr.first].update(itr.second);
         for (const auto& itr : other.m_mapWildcard) m_mapWildcard[itr.first].update(itr.second);
     }
 
     // Access and create a (wildcard) entity
-    T& at(const string& name) {
+    T& at(const string& name) VL_MT_SAFE_EXCLUDES(m_mutex) {
+        V3LockGuard lock{m_mutex};
         // Don't store into wildcards if the name is not a wildcard string
         return m_mapWildcard[name];
     }
     // Access an entity and resolve wildcards that match it
-    T* resolve(const string& name) {
+    T* resolve(const string& name) VL_MT_SAFE_EXCLUDES(m_mutex) {
+        V3LockGuard lock{m_mutex};
         // Lookup if it was resolved before, typically not
         auto it = m_mapResolved.find(name);
         if (VL_UNLIKELY(it != m_mapResolved.end())) return &it->second;
@@ -74,7 +84,10 @@ public:
         return newp;
     }
     // Flush on update
-    void flush() { m_mapResolved.clear(); }
+    void flush() VL_MT_SAFE_EXCLUDES(m_mutex) {
+        V3LockGuard lock{m_mutex};
+        m_mapResolved.clear();
+    }
 };
 
 // Only public_flat_rw has the sensitity tree
@@ -101,10 +114,10 @@ public:
     // Apply all attributes to the variable
     void apply(AstVar* varp) {
         for (const_iterator it = begin(); it != end(); ++it) {
-            AstNode* const newp = new AstAttrOf(varp->fileline(), it->m_type);
+            AstNode* const newp = new AstAttrOf{varp->fileline(), it->m_type};
             varp->addAttrsp(newp);
             if (it->m_type == VAttrType::VAR_PUBLIC_FLAT_RW && it->m_sentreep) {
-                newp->addNext(new AstAlwaysPublic(varp->fileline(), it->m_sentreep, nullptr));
+                newp->addNext(new AstAlwaysPublic{varp->fileline(), it->m_sentreep, nullptr});
             }
         }
     }
@@ -139,9 +152,9 @@ public:
 
     void apply(AstNodeFTask* ftaskp) const {
         if (m_noinline)
-            ftaskp->addStmtsp(new AstPragma(ftaskp->fileline(), VPragmaType::NO_INLINE_TASK));
+            ftaskp->addStmtsp(new AstPragma{ftaskp->fileline(), VPragmaType::NO_INLINE_TASK});
         if (m_public)
-            ftaskp->addStmtsp(new AstPragma(ftaskp->fileline(), VPragmaType::PUBLIC_TASK));
+            ftaskp->addStmtsp(new AstPragma{ftaskp->fileline(), VPragmaType::PUBLIC_TASK});
         // Only functions can have isolate (return value)
         if (VN_IS(ftaskp, Func)) ftaskp->attrIsolateAssign(m_isolate);
     }
@@ -190,12 +203,12 @@ public:
         if (m_inline) {
             const VPragmaType type
                 = m_inlineValue ? VPragmaType::INLINE_MODULE : VPragmaType::NO_INLINE_MODULE;
-            AstNode* const nodep = new AstPragma(modp->fileline(), type);
-            modp->addStmtp(nodep);
+            AstNode* const nodep = new AstPragma{modp->fileline(), type};
+            modp->addStmtsp(nodep);
         }
         for (const auto& itr : m_modPragmas) {
             AstNode* const nodep = new AstPragma{modp->fileline(), itr};
-            modp->addStmtp(nodep);
+            modp->addStmtsp(nodep);
         }
     }
 
@@ -204,7 +217,7 @@ public:
         if (!nodep->unnamed()) {
             for (const string& i : m_coverageOffBlocks) {
                 if (VString::wildmatch(nodep->name(), i)) {
-                    nodep->addStmtsp(new AstPragma(nodep->fileline(), pragma));
+                    nodep->addStmtsp(new AstPragma{nodep->fileline(), pragma});
                 }
             }
         }
@@ -254,7 +267,7 @@ class V3ConfigFile final {
     using WaiverSetting = std::pair<V3ErrorCode, std::string>;  // Waive code if string matches
     using Waivers = std::vector<WaiverSetting>;  // List of {code,wildcard string}
 
-    LineAttrMap m_lineAttrs;  // Atributes to line mapping
+    LineAttrMap m_lineAttrs;  // Attributes to line mapping
     IgnLines m_ignLines;  // Ignore line settings
     Waivers m_waivers;  // Waive messages
 
@@ -287,7 +300,7 @@ public:
     }
     void addLineAttribute(int lineno, VPragmaType attr) { m_lineAttrs[lineno].set(attr); }
     void addIgnore(V3ErrorCode code, int lineno, bool on) {
-        m_ignLines.insert(V3ConfigIgnoresLine(code, lineno, on));
+        m_ignLines.insert(V3ConfigIgnoresLine{code, lineno, on});
         m_lastIgnore.it = m_ignLines.begin();
     }
     void addWaiver(V3ErrorCode code, const string& match) {
@@ -298,7 +311,7 @@ public:
         // Apply to block at this line
         const VPragmaType pragma = VPragmaType::COVERAGE_BLOCK_OFF;
         if (lineMatch(nodep->fileline()->lineno(), pragma)) {
-            nodep->addStmtsp(new AstPragma(nodep->fileline(), pragma));
+            nodep->addStmtsp(new AstPragma{nodep->fileline(), pragma});
         }
     }
     void applyCase(AstCase* nodep) {
@@ -307,7 +320,7 @@ public:
         if (lineMatch(lineno, VPragmaType::FULL_CASE)) nodep->fullPragma(true);
         if (lineMatch(lineno, VPragmaType::PARALLEL_CASE)) nodep->parallelPragma(true);
     }
-    inline void applyIgnores(FileLine* filelinep) {
+    void applyIgnores(FileLine* filelinep) {
         // HOT routine, called each parsed token line of this filename
         if (m_lastIgnore.lineno != filelinep->lineno()) {
             // UINFO(9, "   ApplyIgnores for " << filelinep->ascii() << endl);
@@ -315,7 +328,7 @@ public:
             const int curlineno = filelinep->lastLineno();
             for (; m_lastIgnore.it != m_ignLines.end(); ++m_lastIgnore.it) {
                 if (m_lastIgnore.it->m_lineno > curlineno) break;
-                // UINFO(9, "     Hit " << *m_lastIt << endl);
+                // UINFO(9, "     Hit " << *m_lastIgnore.it << endl);
                 filelinep->warnOn(m_lastIgnore.it->m_code, m_lastIgnore.it->m_on);
             }
             if (false && debug() >= 9) {
@@ -328,7 +341,7 @@ public:
     }
     bool waive(V3ErrorCode code, const string& match) {
         for (const auto& itr : m_waivers) {
-            if (((itr.first == code) || (itr.first == V3ErrorCode::I_LINT))
+            if ((code.isUnder(itr.first) || (itr.first == V3ErrorCode::I_LINT))
                 && VString::wildmatch(match, itr.second)) {
                 return true;
             }
@@ -411,7 +424,7 @@ public:
         for (const auto& ent : m_entries) {
             // We apply shortest match first for each rule component
             // (Otherwise the levels would be useless as "--scope top* --levels 1" would
-            // always match at every scopepart, and we wound't know how to count levels)
+            // always match at every scopepart, and we wouldn't know how to count levels)
             int partLevel = 1;
             for (string::size_type partEnd = 0; true;) {
                 partEnd = scope.find('.', partEnd + 1);
@@ -510,7 +523,7 @@ void V3Config::addInline(FileLine* fl, const string& module, const string& ftask
         V3ConfigResolver::s().modules().at(module).setInline(on);
     } else {
         if (!on) {
-            fl->v3error("no_inline not supported for tasks");
+            fl->v3error("Unsupported: no_inline for tasks");
         } else {
             V3ConfigResolver::s().modules().at(module).ftasks().at(ftask).setNoInline(on);
         }
@@ -559,19 +572,19 @@ void V3Config::addVarAttr(FileLine* fl, const string& module, const string& ftas
     } else {
         if (attr == VAttrType::VAR_FORCEABLE) {
             if (module.empty()) {
-                fl->v3error("missing -module");
+                fl->v3error("forceable missing -module");
             } else if (!ftask.empty()) {
                 fl->v3error("Signals inside functions/tasks cannot be marked forceable");
             } else {
                 V3ConfigResolver::s().modules().at(module).vars().at(var).push_back(
-                    V3ConfigVarAttr(attr));
+                    V3ConfigVarAttr{attr});
             }
         } else {
             V3ConfigModule& mod = V3ConfigResolver::s().modules().at(module);
             if (ftask.empty()) {
-                mod.vars().at(var).push_back(V3ConfigVarAttr(attr, sensep));
+                mod.vars().at(var).push_back(V3ConfigVarAttr{attr, sensep});
             } else {
-                mod.ftasks().at(ftask).vars().at(var).push_back(V3ConfigVarAttr(attr, sensep));
+                mod.ftasks().at(ftask).vars().at(var).push_back(V3ConfigVarAttr{attr, sensep});
             }
         }
     }

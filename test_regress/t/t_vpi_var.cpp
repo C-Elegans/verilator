@@ -15,25 +15,32 @@
 
 #else
 
-#include "Vt_vpi_var.h"
 #include "verilated.h"
-#include "svdpi.h"
-
-#include "Vt_vpi_var__Dpi.h"
-
-#include "verilated_vpi.h"
 #include "verilated_vcd_c.h"
+#include "verilated_vpi.h"
+
+#ifdef T_VPI_VAR2
+#include "Vt_vpi_var2.h"
+#include "Vt_vpi_var2__Dpi.h"
+#else
+#include "Vt_vpi_var.h"
+#include "Vt_vpi_var__Dpi.h"
+#endif
+
+#include "svdpi.h"
 
 #endif
 
-#include <cstdlib>
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <iostream>
 
+// These require the above. Comment prevents clang-format moving them
 #include "TestSimulator.h"
 #include "TestVpi.h"
 
+int errors = 0;
 // __FILE__ is too long
 #define FILENM "t_vpi_var.cpp"
 
@@ -89,7 +96,7 @@ bool verbose = false;
     }
 
 #define CHECK_RESULT_CSTR(got, exp) \
-    if (strcmp((got), (exp))) { \
+    if (std::strcmp((got), (exp))) { \
         printf("%%Error: %s:%d: GOT = '%s'   EXP = '%s'\n", FILENM, __LINE__, \
                ((got) != NULL) ? (got) : "<null>", ((exp) != NULL) ? (exp) : "<null>"); \
         return __LINE__; \
@@ -116,7 +123,7 @@ int _mon_check_mcd() {
     }
 
     status = vpi_mcd_printf(mcd, (PLI_BYTE8*)"hello %s", "vpi_mcd_printf");
-    CHECK_RESULT(status, strlen("hello vpi_mcd_printf"));
+    CHECK_RESULT(status, std::strlen("hello vpi_mcd_printf"));
 
     status = vpi_mcd_printf(0, (PLI_BYTE8*)"empty");
     CHECK_RESULT(status, 0);
@@ -266,6 +273,25 @@ int _mon_check_var() {
     TestVpiHandle vh3 = vpi_handle_by_name((PLI_BYTE8*)"onebit", vh2);
     CHECK_RESULT_NZ(vh3);
 
+#ifdef T_VPI_VAR2
+    // test scoped attributes
+    TestVpiHandle vh_invisible1 = vpi_handle_by_name((PLI_BYTE8*)"invisible1", vh2);
+    CHECK_RESULT_Z(vh_invisible1);
+
+    TestVpiHandle vh_invisible2 = vpi_handle_by_name((PLI_BYTE8*)"invisible2", vh2);
+    CHECK_RESULT_Z(vh_invisible2);
+
+    TestVpiHandle vh_visibleParam1 = vpi_handle_by_name((PLI_BYTE8*)"visibleParam1", vh2);
+    CHECK_RESULT_NZ(vh_visibleParam1);
+
+    TestVpiHandle vh_invisibleParam1 = vpi_handle_by_name((PLI_BYTE8*)"invisibleParam1", vh2);
+    CHECK_RESULT_Z(vh_invisibleParam1);
+
+    TestVpiHandle vh_visibleParam2 = vpi_handle_by_name((PLI_BYTE8*)"visibleParam2", vh2);
+    CHECK_RESULT_NZ(vh_visibleParam2);
+
+#endif
+
     // onebit attributes
     PLI_INT32 d;
     d = vpi_get(vpiType, vh3);
@@ -388,6 +414,8 @@ int _mon_check_varlist() {
 int _mon_check_getput() {
     TestVpiHandle vh2 = VPI_HANDLE("onebit");
     CHECK_RESULT_NZ(vh2);
+    const char* p = vpi_get_str(vpiFullName, vh2);
+    CHECK_RESULT_CSTR(p, "t.onebit");
 
     s_vpi_value v;
     v.format = vpiIntVal;
@@ -398,12 +426,65 @@ int _mon_check_getput() {
     t.type = vpiSimTime;
     t.high = 0;
     t.low = 0;
+    v.value.integer = 0;
+    vpi_put_value(vh2, &v, &t, vpiNoDelay);
+    vpi_get_value(vh2, &v);
+    CHECK_RESULT(v.value.integer, 0);
+
     v.value.integer = 1;
     vpi_put_value(vh2, &v, &t, vpiNoDelay);
-
     vpi_get_value(vh2, &v);
     CHECK_RESULT(v.value.integer, 1);
 
+    return 0;
+}
+
+int _mon_check_var_long_name() {
+    TestVpiHandle vh2 = VPI_HANDLE(
+        "LONGSTART_a_very_long_name_which_will_get_hashed_a_very_long_name_which_will_get_hashed_"
+        "a_very_long_name_which_will_get_hashed_a_very_long_name_which_will_get_hashed_LONGEND");
+    CHECK_RESULT_NZ(vh2);
+    const char* p = vpi_get_str(vpiFullName, vh2);
+    CHECK_RESULT_CSTR(p, "t.LONGSTART_a_very_long_name_which_will_get_hashed_a_very_long_name_"
+                         "which_will_get_hashed_a_very_long_name_which_will_get_hashed_a_very_"
+                         "long_name_which_will_get_hashed_LONGEND");
+    return 0;
+}
+
+int _mon_check_getput_iter() {
+    TestVpiHandle vh2 = VPI_HANDLE("sub");
+    CHECK_RESULT_NZ(vh2);
+    TestVpiHandle vh10 = vpi_iterate(vpiReg, vh2);
+    CHECK_RESULT_NZ(vh10);
+    CHECK_RESULT(vpi_get(vpiType, vh10), vpiIterator);
+
+    TestVpiHandle vh11;
+    while (1) {
+        vh11 = vpi_scan(vh10);
+        CHECK_RESULT_NZ(vh11);  // If get zero we never found the variable
+        const char* p = vpi_get_str(vpiFullName, vh11);
+#ifdef TEST_VERBOSE
+        printf("       scanned %s\n", p);
+#endif
+        if (0 == strcmp(p, "t.sub.subsig1")) break;
+    }
+    CHECK_RESULT(vpi_get(vpiType, vh11), vpiReg);
+
+    s_vpi_time t;
+    t.type = vpiSimTime;
+    t.high = 0;
+    t.low = 0;
+    s_vpi_value v;
+    v.format = vpiIntVal;
+    v.value.integer = 0;
+    vpi_put_value(vh11, &v, &t, vpiNoDelay);
+    vpi_get_value(vh11, &v);
+    CHECK_RESULT(v.value.integer, 0);
+
+    v.value.integer = 1;
+    vpi_put_value(vh11, &v, &t, vpiNoDelay);
+    vpi_get_value(vh11, &v);
+    CHECK_RESULT(v.value.integer, 1);
     return 0;
 }
 
@@ -520,7 +601,7 @@ int _mon_check_putget_str(p_cb_data cb_data) {
             int words = (i + 31) >> 5;
             TEST_MSG("========== %d ==========\n", i);
             if (callback_count_strs) {
-                // check persistance
+                // check persistence
                 if (data[i].type) {
                     v.format = data[i].type;
                 } else {
@@ -535,7 +616,7 @@ int _mon_check_putget_str(p_cb_data cb_data) {
                     CHECK_RESULT_CSTR(v.value.str, data[i].str.c_str());
                 } else {
                     data[i].type = v.format;
-                    data[i].str = std::string(v.value.str);
+                    data[i].str = std::string{v.value.str};
                 }
             }
 
@@ -604,6 +685,12 @@ int _mon_check_putget_str(p_cb_data cb_data) {
                             = vpi_handle_by_name((PLI_BYTE8*)"verbose", data[i].scope));
         }
 
+        for (int i = 1; i <= 6; i++) {
+            char buf[32];
+            snprintf(buf, sizeof(buf), TestSimulator::rooted("subs[%d].subsub"), i);
+            CHECK_RESULT_NZ(data[i].scope = vpi_handle_by_name((PLI_BYTE8*)buf, NULL));
+        }
+
         static t_cb_data cb_data;
         static s_vpi_value v;
         TestVpiHandle count_h = VPI_HANDLE("count");
@@ -633,7 +720,7 @@ int _mon_check_vlog_info() {
     CHECK_RESULT_Z(vlog_info.argv[4]);
     if (TestSimulator::is_verilator()) {
         CHECK_RESULT_CSTR(vlog_info.product, "Verilator");
-        CHECK_RESULT(strlen(vlog_info.version) > 0, 1);
+        CHECK_RESULT(std::strlen(vlog_info.version) > 0, 1);
     }
     return 0;
 }
@@ -649,7 +736,9 @@ extern "C" int mon_check() {
     if (int status = _mon_check_value_callbacks()) return status;
     if (int status = _mon_check_var()) return status;
     if (int status = _mon_check_varlist()) return status;
+    if (int status = _mon_check_var_long_name()) return status;
     if (int status = _mon_check_getput()) return status;
+    if (int status = _mon_check_getput_iter()) return status;
     if (int status = _mon_check_quad()) return status;
     if (int status = _mon_check_string()) return status;
     if (int status = _mon_check_putget_str(NULL)) return status;
@@ -692,21 +781,25 @@ void (*vlog_startup_routines[])() = {vpi_compat_bootstrap, 0};
 #else
 
 double sc_time_stamp() { return main_time; }
-int main(int argc, char** argv, char** env) {
-    uint64_t sim_time = 1100;
-    Verilated::commandArgs(argc, argv);
-    Verilated::debug(0);
+int main(int argc, char** argv) {
+    const std::unique_ptr<VerilatedContext> contextp{new VerilatedContext};
 
-    VM_PREFIX* topp = new VM_PREFIX("");  // Note null name - we're flattening it out
+    uint64_t sim_time = 1100;
+    contextp->debug(0);
+    contextp->commandArgs(argc, argv);
+
+    const std::unique_ptr<VM_PREFIX> topp{new VM_PREFIX{contextp.get(),
+                                                        // Note null name - we're flattening it out
+                                                        ""}};
 
 #ifdef VERILATOR
 #ifdef TEST_VERBOSE
-    Verilated::scopesDump();
+    contextp->scopesDump();
 #endif
 #endif
 
 #if VM_TRACE
-    Verilated::traceEverOn(true);
+    contextp->traceEverOn(true);
     VL_PRINTF("Enabling waves...\n");
     VerilatedVcdC* tfp = new VerilatedVcdC;
     topp->trace(tfp, 99);
@@ -717,7 +810,7 @@ int main(int argc, char** argv, char** env) {
     topp->clk = 0;
     main_time += 10;
 
-    while (vl_time_stamp64() < sim_time && !Verilated::gotFinish()) {
+    while (vl_time_stamp64() < sim_time && !contextp->gotFinish()) {
         main_time += 1;
         topp->eval();
         VerilatedVpi::callValueCbs();
@@ -731,7 +824,7 @@ int main(int argc, char** argv, char** env) {
     CHECK_RESULT(callback_count_half, 250);
     CHECK_RESULT(callback_count_quad, 2);
     CHECK_RESULT(callback_count_strs, callback_count_strs_max);
-    if (!Verilated::gotFinish()) {
+    if (!contextp->gotFinish()) {
         vl_fatal(FILENM, __LINE__, "main", "%Error: Timeout; never got a $finish");
     }
     topp->final();
@@ -740,7 +833,6 @@ int main(int argc, char** argv, char** env) {
     if (tfp) tfp->close();
 #endif
 
-    VL_DO_DANGLING(delete topp, topp);
     return 0;
 }
 

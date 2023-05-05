@@ -2,7 +2,7 @@
 ######################################################################
 # DESCRIPTION: Makefile commands for all verilated target files
 #
-# Copyright 2003-2022 by Wilson Snyder. This program is free software; you
+# Copyright 2003-2023 by Wilson Snyder. This program is free software; you
 # can redistribute it and/or modify it under the terms of either the GNU
 # Lesser General Public License Version 3 or the Perl Artistic License
 # Version 2.0.
@@ -21,12 +21,16 @@ CFG_WITH_LONGTESTS = @CFG_WITH_LONGTESTS@
 
 # Compiler flags to enable profiling
 CFG_CXXFLAGS_PROFILE = @CFG_CXXFLAGS_PROFILE@
-# Select newest language
+# Select language required to compile (often empty)
+CFG_CXXFLAGS_STD = @CFG_CXXFLAGS_STD@
+# Select newest language (unused by this Makefile, for some test's Makefiles)
 CFG_CXXFLAGS_STD_NEWEST = @CFG_CXXFLAGS_STD_NEWEST@
 # Compiler flags to use to turn off unused and generated code warnings, such as -Wno-div-by-zero
 CFG_CXXFLAGS_NO_UNUSED = @CFG_CXXFLAGS_NO_UNUSED@
 # Compiler flags that turn on extra warnings
 CFG_CXXFLAGS_WEXTRA = @CFG_CXXFLAGS_WEXTRA@
+# Compiler flags that enable coroutine support
+CFG_CXXFLAGS_COROUTINES = @CFG_CXXFLAGS_COROUTINES@
 # Linker libraries for multithreading
 CFG_LDLIBS_THREADS = @CFG_LDLIBS_THREADS@
 
@@ -34,7 +38,7 @@ CFG_LDLIBS_THREADS = @CFG_LDLIBS_THREADS@
 # Programs
 
 VERILATOR_COVERAGE = $(PERL) $(VERILATOR_ROOT)/bin/verilator_coverage
-VERILATOR_INCLUDER = $(PERL) $(VERILATOR_ROOT)/bin/verilator_includer
+VERILATOR_INCLUDER = $(PYTHON3) $(VERILATOR_ROOT)/bin/verilator_includer
 VERILATOR_CCACHE_REPORT = $(PYTHON3) $(VERILATOR_ROOT)/bin/verilator_ccache_report
 
 ######################################################################
@@ -43,6 +47,10 @@ VERILATOR_CCACHE_REPORT = $(PYTHON3) $(VERILATOR_ROOT)/bin/verilator_ccache_repo
 ifneq ($(words $(CURDIR)),1)
  $(error Unsupported: GNU Make cannot build in directories containing spaces, build elsewhere: '$(CURDIR)')
 endif
+
+######################################################################
+# OS detection
+UNAME_S := $(shell uname -s)
 
 ######################################################################
 # C Preprocessor flags
@@ -59,7 +67,7 @@ VK_CPPFLAGS_ALWAYS += \
 		-DVM_TRACE_VCD=$(VM_TRACE_VCD) \
 		$(CFG_CXXFLAGS_NO_UNUSED) \
 
-ifeq ($(CFG_WITH_CCWARN),yes)	# Local... Else don't burden users
+ifeq ($(CFG_WITH_CCWARN),yes)  # Local... Else don't burden users
 VK_CPPFLAGS_WALL += -Wall $(CFG_CXXFLAGS_WEXTRA) -Werror
 endif
 
@@ -75,6 +83,12 @@ CPPFLAGS += $(OPT)
 
 CPPFLAGS += $(M32)
 LDFLAGS  += $(M32)
+
+# On macOS, specify all weak symbols as dynamic_lookup.
+# Otherwise, you get undefined symbol errors.
+ifeq ($(UNAME_S),Darwin)
+	LDFLAGS += -Wl,-U,__Z15vl_time_stamp64v,-U,__Z13sc_time_stampv
+endif
 
 # Allow upper level user makefiles to specify flags they want.
 # These aren't ever set by Verilator, so users are free to override them.
@@ -128,52 +142,15 @@ endif
 #######################################################################
 ##### Threaded builds
 
-ifneq ($(VM_C11),0)
- ifneq ($(VM_C11),)
-  VK_C11=1
+CPPFLAGS += $(CFG_CXXFLAGS_STD)
+LDLIBS += $(CFG_LDLIBS_THREADS)
+
+ifneq ($(VM_TIMING),0)
+ ifneq ($(VM_TIMING),)
+  CPPFLAGS += $(CFG_CXXFLAGS_COROUTINES)
  endif
 endif
 
-ifneq ($(VM_THREADS),0)
- ifneq ($(VM_THREADS),)
-  CPPFLAGS += -DVL_THREADED
-  VK_C11=1
-  VK_LIBS_THREADED=1
- endif
-endif
-
-ifneq ($(VM_TRACE_THREADS),0)
- ifneq ($(VM_TRACE_THREADS),)
-  ifeq ($(findstring -DVL_THREADED,$(CPPFLAGS)),)
-   $(error VM_TRACE_THREADS requires VM_THREADS)
-  endif
-  CPPFLAGS += -DVL_TRACE_THREADED
-  VK_C11=1
-  VK_LIBS_THREADED=1
- endif
-endif
-
-
-ifneq ($(VM_TRACE_FST_WRITER_THREAD),0)
- ifneq ($(VM_TRACE_FST_WRITER_THREAD),)
-  CPPFLAGS += -DVL_TRACE_FST_WRITER_THREAD
-  VK_C11=1
-  VK_LIBS_THREADED=1
- endif
-endif
-
-ifneq ($(VK_C11),0)
- ifneq ($(VK_C11),)
-  # Need C++11 at least, so always default to newest
-  CPPFLAGS += $(CFG_CXXFLAGS_STD_NEWEST)
- endif
-endif
-
-ifneq ($(VK_LIBS_THREADED),0)
- ifneq ($(VK_LIBS_THREADED),)
-  LDLIBS += $(CFG_LDLIBS_THREADS)
- endif
-endif
 
 #######################################################################
 ### Aggregates
@@ -187,7 +164,7 @@ VM_SLOW += $(VM_CLASSES_SLOW) $(VM_SUPPORT_SLOW)
 VK_FAST_OBJS = $(addsuffix .o, $(VM_FAST))
 VK_SLOW_OBJS = $(addsuffix .o, $(VM_SLOW))
 
-VK_USER_OBJS   = $(addsuffix .o, $(VM_USER_CLASSES))
+VK_USER_OBJS = $(addsuffix .o, $(VM_USER_CLASSES))
 
 # Note VM_GLOBAL_FAST and VM_GLOBAL_SLOW holds the files required from the
 # run-time library. In practice everything is actually in VM_GLOBAL_FAST,
@@ -258,14 +235,16 @@ $(VM_PREFIX)__ALL.a: $(VK_OBJS) $(VM_HIER_LIBS)
 ifneq ($(VM_DEFAULT_RULES),0)
 # Anything not in $(VK_SLOW_OBJS) or $(VK_GLOBAL_OBJS), including verilated.o
 # and user files passed on the Verilator command line use this rule.
+# We put OPT_FAST/OPT_SLOW/OPT_GLOBAL before the other flags to
+# allow USER_CPPFLAGS to override them
 %.o: %.cpp
-	$(OBJCACHE) $(CXX) $(CXXFLAGS) $(CPPFLAGS) $(OPT_FAST) -c -o $@ $<
+	$(OBJCACHE) $(CXX) $(OPT_FAST) $(CXXFLAGS) $(CPPFLAGS) -c -o $@ $<
 
 $(VK_SLOW_OBJS): %.o: %.cpp
-	$(OBJCACHE) $(CXX) $(CXXFLAGS) $(CPPFLAGS) $(OPT_SLOW) -c -o $@ $<
+	$(OBJCACHE) $(CXX) $(OPT_SLOW) $(CXXFLAGS) $(CPPFLAGS) -c -o $@ $<
 
 $(VK_GLOBAL_OBJS): %.o: %.cpp
-	$(OBJCACHE) $(CXX) $(CXXFLAGS) $(CPPFLAGS) $(OPT_GLOBAL) -c -o $@ $<
+	$(OBJCACHE) $(CXX) $(OPT_GLOBAL) $(CXXFLAGS) $(CPPFLAGS) -c -o $@ $<
 endif
 
 #Default rule embedded in make:

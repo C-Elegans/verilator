@@ -3,7 +3,7 @@
 //
 // Code available from: https://verilator.org
 //
-// Copyright 2009-2022 by Wilson Snyder. This program is free software; you can
+// Copyright 2009-2023 by Wilson Snyder. This program is free software; you can
 // redistribute it and/or modify it under the terms of either the GNU
 // Lesser General Public License Version 3 or the Perl Artistic License
 // Version 2.0.
@@ -41,10 +41,8 @@
 #include <string>
 #include <utility>
 #include <vector>
-#ifdef VL_THREADED
-# include <functional>
-# include <queue>
-#endif
+#include <functional>
+#include <queue>
 // clang-format on
 
 class VerilatedScope;
@@ -52,7 +50,6 @@ class VerilatedScope;
 //======================================================================
 // Threaded message passing
 
-#ifdef VL_THREADED
 // Message, enqueued on an mtask, and consumed on the main eval thread
 class VerilatedMsg final {
 public:
@@ -143,17 +140,16 @@ class VerilatedThreadMsgQueue final {
 
 public:
     // CONSTRUCTORS
-    VerilatedThreadMsgQueue() {}
-    ~VerilatedThreadMsgQueue() {
-        // The only call of this with a non-empty queue is a fatal error.
-        // So this does not flush the queue, as the destination queue is not known to this class.
-    }
+    VerilatedThreadMsgQueue() = default;
+    ~VerilatedThreadMsgQueue() = default;
+    // The only call of destructor with a non-empty queue is a fatal error.
+    // So this does not flush the queue, as the destination queue is not known to this class.
 
 private:
     VL_UNCOPYABLE(VerilatedThreadMsgQueue);
     // METHODS
-    static VerilatedThreadMsgQueue& threadton() {
-        static VL_THREAD_LOCAL VerilatedThreadMsgQueue t_s;
+    static VerilatedThreadMsgQueue& threadton() VL_MT_SAFE {
+        static thread_local VerilatedThreadMsgQueue t_s;
         return t_s;
     }
 
@@ -179,7 +175,6 @@ public:
         }
     }
 };
-#endif  // VL_THREADED
 
 // FILE* list constructed from a file-descriptor
 class VerilatedFpList final {
@@ -188,11 +183,11 @@ class VerilatedFpList final {
 
 public:
     using const_iterator = FILE* const*;
-    explicit VerilatedFpList() {}
+    explicit VerilatedFpList() = default;
     const_iterator begin() const { return m_fp; }
     const_iterator end() const { return m_fp + m_sz; }
     std::size_t size() const { return m_sz; }
-    std::size_t capacity() const { return 31; }
+    static std::size_t capacity() { return 31; }
     void push_back(FILE* fd) {
         if (VL_LIKELY(size() < capacity())) m_fp[m_sz++] = fd;
     }
@@ -231,17 +226,16 @@ class VerilatedContextImp final : VerilatedContext {
         // Number incrementing on each reseed, 0=illegal
         int s_randSeedEpoch = 1;  // Reads ok, wish had a VL_WRITE_GUARDED_BY(s_randMutex)
     };
-    static Statics& s() {
+    static Statics& s() VL_MT_SAFE {
         static Statics s_s;
         return s_s;
     }
 
-private:
+public:  // But only for verilated*.cpp
     // CONSTRUCTORS - no data can live here, use only VerilatedContext
     VerilatedContextImp() = delete;
     ~VerilatedContextImp() = delete;
 
-public:  // But only for verilated*.cpp
     // METHODS - extending into VerilatedContext, call via impp()->
 
     // Random seed handling
@@ -272,13 +266,12 @@ public:  // But only for verilated*.cpp
     std::string argPlusMatch(const char* prefixp) VL_MT_SAFE_EXCLUDES(m_argMutex);
     std::pair<int, char**> argc_argv() VL_MT_SAFE_EXCLUDES(m_argMutex);
 
-public:  // But only for verilated*.cpp
-    // METHODS - scope name
+    // METHODS - scope name - INTERNAL only for verilated*.cpp
     void scopeInsert(const VerilatedScope* scopep) VL_MT_SAFE;
     void scopeErase(const VerilatedScope* scopep) VL_MT_SAFE;
 
-public:  // But only for verilated*.cpp
-    // METHODS - file IO
+    // METHODS - file IO - INTERNAL only for verilated*.cpp
+
     IData fdNewMcd(const char* filenamep) VL_MT_SAFE_EXCLUDES(m_fdMutex) {
         const VerilatedLockGuard lock{m_fdMutex};
         if (m_fdFreeMct.empty()) return 0;
@@ -298,7 +291,7 @@ public:  // But only for verilated*.cpp
             const std::size_t start = std::max<std::size_t>(31UL + 1UL + 3UL, m_fdps.size());
             const std::size_t excess = 10;
             m_fdps.resize(start + excess);
-            std::fill(m_fdps.begin() + start, m_fdps.end(), (FILE*)0);
+            std::fill(m_fdps.begin() + start, m_fdps.end(), static_cast<FILE*>(nullptr));
             m_fdFree.resize(excess);
             for (std::size_t i = 0, id = start; i < m_fdFree.size(); ++i, ++id) {
                 m_fdFree[i] = id;
@@ -344,7 +337,7 @@ public:  // But only for verilated*.cpp
             if (VL_UNLIKELY(idx <= 2)) return;  // stdout/stdin/stderr
             if (VL_UNLIKELY(!m_fdps[idx])) return;  // Already free
             std::fclose(m_fdps[idx]);
-            m_fdps[idx] = (FILE*)0;
+            m_fdps[idx] = nullptr;
             m_fdFree.push_back(idx);
         } else {
             // MCD case
@@ -359,7 +352,7 @@ public:  // But only for verilated*.cpp
             }
         }
     }
-    inline FILE* fdToFp(IData fdi) VL_MT_SAFE_EXCLUDES(m_fdMutex) {
+    FILE* fdToFp(IData fdi) VL_MT_SAFE_EXCLUDES(m_fdMutex) {
         const VerilatedLockGuard lock{m_fdMutex};
         const VerilatedFpList fdlist = fdToFpList(fdi);
         if (VL_UNLIKELY(fdlist.size() != 1)) return nullptr;
@@ -369,6 +362,7 @@ public:  // But only for verilated*.cpp
 private:
     VerilatedFpList fdToFpList(IData fdi) VL_REQUIRES(m_fdMutex) {
         VerilatedFpList fp;
+        // cppverilator-suppress integerOverflow shiftTooManyBitsSigned
         if ((fdi & (1 << 31)) != 0) {
             // Non-MCD case
             const IData idx = fdi & VL_MASK_I(31);
@@ -393,7 +387,9 @@ private:
 
 protected:
     // METHODS - protected
-    void commandArgsAddGuts(int argc, const char** argv);
+    void commandArgsGuts(int argc, const char** argv) VL_MT_SAFE_EXCLUDES(m_argMutex);
+    void commandArgsAddGutsLock(int argc, const char** argv) VL_MT_SAFE_EXCLUDES(m_argMutex);
+    void commandArgsAddGuts(int argc, const char** argv) VL_REQUIRES(m_argMutex);
     void commandArgVl(const std::string& arg);
     bool commandArgVlString(const std::string& arg, const std::string& prefix,
                             std::string& valuer);
@@ -447,7 +443,7 @@ protected:
     friend class Verilated;
 
     // MEMBERS
-    static VerilatedImpData& s() {  // Singleton
+    static VerilatedImpData& s() VL_MT_SAFE {  // Singleton
         static VerilatedImpData s_s;
         return s_s;
     }
@@ -464,13 +460,12 @@ public:
     // METHODS - debug
     static void versionDump() VL_MT_SAFE;
 
-public:
     // METHODS - user scope tracking
     // We implement this as a single large map instead of one map per scope.
     // There's often many more scopes than userdata's and thus having a ~48byte
     // per map overhead * N scopes would take much more space and cache thrashing.
     // As scopep's are pointers, this implicitly handles multiple Context's
-    static inline void userInsert(const void* scopep, void* userKey, void* userData) VL_MT_SAFE {
+    static void userInsert(const void* scopep, void* userKey, void* userData) VL_MT_SAFE {
         const VerilatedLockGuard lock{s().m_userMapMutex};
         const auto it = s().m_userMap.find(std::make_pair(scopep, userKey));
         if (it != s().m_userMap.end()) {
@@ -479,14 +474,15 @@ public:
             s().m_userMap.emplace(std::make_pair(scopep, userKey), userData);
         }
     }
-    static inline void* userFind(const void* scopep, void* userKey) VL_MT_SAFE {
+    static void* userFind(const void* scopep, void* userKey) VL_MT_SAFE {
         const VerilatedLockGuard lock{s().m_userMapMutex};
         const auto& it = vlstd::as_const(s().m_userMap).find(std::make_pair(scopep, userKey));
         if (VL_UNLIKELY(it == s().m_userMap.end())) return nullptr;
         return it->second;
     }
 
-public:  // But only for verilated.cpp
+    // METHODS - But only for verilated.cpp
+
     // Symbol table destruction cleans up the entries for each scope.
     static void userEraseScope(const VerilatedScope* scopep) VL_MT_SAFE {
         // Slow ok - called once/scope on destruction, so we only iterate.
@@ -512,8 +508,7 @@ public:  // But only for verilated.cpp
         }
     }
 
-public:  // But only for verilated*.cpp
-    // METHODS - hierarchy
+    // METHODS - hierarchy - only for verilated*.cpp
     static void hierarchyAdd(const VerilatedScope* fromp, const VerilatedScope* top) VL_MT_SAFE {
         // Slow ok - called at construction for VPI accessible elements
         const VerilatedLockGuard lock{s().m_hierMapMutex};
@@ -534,8 +529,7 @@ public:  // But only for verilated*.cpp
         return &s().m_hierMap;
     }
 
-public:  // But only for verilated*.cpp
-    // METHODS - export names
+    // METHODS - export names - only for verilated*.cpp
 
     // Each function prototype is converted to a function number which we
     // then use to index a 2D table also indexed by scope number, because we

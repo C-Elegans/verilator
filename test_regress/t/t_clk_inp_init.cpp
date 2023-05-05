@@ -24,7 +24,7 @@ void oneTest(int argc, char** argv, int seed) {
     contextp->randReset(123);
 
     // Construct the Verilated model, from Vtop.h generated from Verilating
-    const std::unique_ptr<Vt_clk_inp_init> topp{new Vt_clk_inp_init{contextp.get()}};
+    const std::unique_ptr<VM_PREFIX> topp{new VM_PREFIX{contextp.get()}};
 
     // Start not in reset
     topp->rst_n = 1;
@@ -51,7 +51,7 @@ void oneTest(int argc, char** argv, int seed) {
     topp->final();
 }
 
-int main(int argc, char** argv, char** env) {
+int main(int argc, char** argv) {
 #if VL_DEBUG
     // Verilated::debug(1);
 #endif

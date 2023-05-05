@@ -6,7 +6,7 @@
 //
 //*************************************************************************
 //
-// Copyright 2003-2022 by Wilson Snyder. This program is free software; you
+// Copyright 2003-2023 by Wilson Snyder. This program is free software; you
 // can redistribute it and/or modify it under the terms of either the GNU
 // Lesser General Public License Version 3 or the Perl Artistic License
 // Version 2.0.
@@ -20,8 +20,8 @@
 #include "config_build.h"
 #include "verilatedos.h"
 
-#include "V3Error.h"
 #include "V3Ast.h"
+#include "V3Error.h"
 
 // clang-format off
 #ifndef VERILATOR_V3WIDTH_CPP_
@@ -35,8 +35,9 @@
 /// This step is only called on real V3Width, not intermediate e.g. widthParams
 
 class WidthRemoveVisitor final : public VNVisitor {
-private:
     // METHODS
+    VL_DEFINE_DEBUG_FUNCTIONS;
+
     void replaceWithSignedVersion(AstNode* nodep, AstNode* newp) {
         UINFO(6, " Replace " << nodep << " w/ " << newp << endl);
         nodep->replaceWith(newp);
@@ -45,18 +46,18 @@ private:
     }
 
     // VISITORS
-    virtual void visit(AstSigned* nodep) override {
+    void visit(AstSigned* nodep) override {
         VL_DO_DANGLING(replaceWithSignedVersion(nodep, nodep->lhsp()->unlinkFrBack()), nodep);
     }
-    virtual void visit(AstUnsigned* nodep) override {
+    void visit(AstUnsigned* nodep) override {
         VL_DO_DANGLING(replaceWithSignedVersion(nodep, nodep->lhsp()->unlinkFrBack()), nodep);
     }
-    virtual void visit(AstNode* nodep) override { iterateChildren(nodep); }
+    void visit(AstNode* nodep) override { iterateChildren(nodep); }
 
 public:
     // CONSTRUCTORS
     WidthRemoveVisitor() = default;
-    virtual ~WidthRemoveVisitor() override = default;
+    ~WidthRemoveVisitor() override = default;
     AstNode* mainAcceptEdit(AstNode* nodep) { return iterateSubtreeReturnEdits(nodep); }
 };
 
@@ -74,14 +75,17 @@ class WidthCommitVisitor final : public VNVisitor {
 
 public:
     // METHODS
+    VL_DEFINE_DEBUG_FUNCTIONS;
+
     static AstConst* newIfConstCommitSize(AstConst* nodep) {
         if (((nodep->dtypep()->width() != nodep->num().width()) || !nodep->num().sized())
             && !nodep->num().isString()) {  // Need to force the number from unsized to sized
-            V3Number num(nodep, nodep->dtypep()->width());
+            V3Number num{nodep, nodep->dtypep()->width()};
             num.opAssign(nodep->num());
             num.isSigned(nodep->isSigned());
-            AstConst* const newp = new AstConst(nodep->fileline(), num);
+            AstConst* const newp = new AstConst{nodep->fileline(), num};
             newp->dtypeFrom(nodep);
+            newp->user1(true);
             return newp;
         } else {
             return nullptr;
@@ -139,19 +143,19 @@ private:
             if (how) {
                 UINFO(9, "refclass " << refClassp << endl);
                 UINFO(9, "defclass " << defClassp << endl);
-                nodep->v3warn(E_ENCAPSULATED, nodep->prettyNameQ()
-                                                  << " is hidden as " << how
-                                                  << " within this context (IEEE 1800-2017 8.18)\n"
-                                                  << nodep->warnContextPrimary() << endl
-                                                  << nodep->warnOther()
-                                                  << "... Location of definition" << endl
-                                                  << defp->warnContextSecondary());
+                nodep->v3warn(ENCAPSULATED, nodep->prettyNameQ()
+                                                << " is hidden as " << how
+                                                << " within this context (IEEE 1800-2017 8.18)\n"
+                                                << nodep->warnContextPrimary() << endl
+                                                << nodep->warnOther()
+                                                << "... Location of definition" << endl
+                                                << defp->warnContextSecondary());
             }
         }
     }
 
     // VISITORS
-    virtual void visit(AstNodeModule* nodep) override {
+    void visit(AstNodeModule* nodep) override {
         VL_RESTORER(m_modp);
         {
             m_modp = nodep;
@@ -159,28 +163,36 @@ private:
             editDType(nodep);
         }
     }
-    virtual void visit(AstConst* nodep) override {
+    void visit(AstConst* nodep) override {
+        if (nodep->user1SetOnce()) return;  // Process once
         UASSERT_OBJ(nodep->dtypep(), nodep, "No dtype");
         iterate(nodep->dtypep());  // Do datatype first
         if (AstConst* const newp = newIfConstCommitSize(nodep)) {
             nodep->replaceWith(newp);
             AstNode* const oldp = nodep;
             nodep = newp;
-            // if (debug() > 4) oldp->dumpTree(cout, "  fixConstSize_old: ");
-            // if (debug() > 4) newp->dumpTree(cout, "              _new: ");
+            // if (debug() > 4) oldp->dumpTree("-  fixConstSize_old: ");
+            // if (debug() > 4) newp->dumpTree("-              _new: ");
             VL_DO_DANGLING(pushDeletep(oldp), oldp);
         }
         editDType(nodep);
     }
-    virtual void visit(AstNodeDType* nodep) override {  //
+    void visit(AstCastWrap* nodep) override {
+        iterateChildren(nodep);
+        editDType(nodep);
+        UINFO(6, " Replace " << nodep << " w/ " << nodep->lhsp() << endl);
+        nodep->replaceWith(nodep->lhsp()->unlinkFrBack());
+        VL_DO_DANGLING(pushDeletep(nodep), nodep);
+    }
+    void visit(AstNodeDType* nodep) override {  //
         visitIterateNodeDType(nodep);
     }
-    virtual void visit(AstNodeUOrStructDType* nodep) override {
+    void visit(AstNodeUOrStructDType* nodep) override {
         if (nodep->user1SetOnce()) return;  // Process once
         visitIterateNodeDType(nodep);
         nodep->clearCache();
     }
-    virtual void visit(AstParamTypeDType* nodep) override {
+    void visit(AstParamTypeDType* nodep) override {
         if (nodep->user1SetOnce()) return;  // Process once
         visitIterateNodeDType(nodep);
         // Move to type table as all dtype pointers must resolve there
@@ -199,37 +211,38 @@ private:
         nodep->virtRefDTypep(editOneDType(nodep->virtRefDTypep()));
         nodep->virtRefDType2p(editOneDType(nodep->virtRefDType2p()));
     }
-    virtual void visit(AstNodeFTask* nodep) override {
+    void visit(AstNodeFTask* nodep) override {
         iterateChildren(nodep);
         editDType(nodep);
-        if (nodep->classMethod() && nodep->pureVirtual() && VN_IS(m_modp, Class)
-            && !VN_AS(m_modp, Class)->isVirtual()) {
+        AstClass* classp = VN_CAST(m_modp, Class);
+        if (nodep->classMethod() && nodep->pureVirtual() && classp && !classp->isInterfaceClass()
+            && !classp->isVirtual()) {
             nodep->v3error(
                 "Illegal to have 'pure virtual' in non-virtual class (IEEE 1800-2017 8.21)");
         }
     }
-    virtual void visit(AstNodeVarRef* nodep) override {
+    void visit(AstNodeVarRef* nodep) override {
         iterateChildren(nodep);
         editDType(nodep);
         classEncapCheck(nodep, nodep->varp(), VN_CAST(nodep->classOrPackagep(), Class));
     }
-    virtual void visit(AstNodeFTaskRef* nodep) override {
+    void visit(AstNodeFTaskRef* nodep) override {
         iterateChildren(nodep);
         editDType(nodep);
         classEncapCheck(nodep, nodep->taskp(), VN_CAST(nodep->classOrPackagep(), Class));
     }
-    virtual void visit(AstMemberSel* nodep) override {
+    void visit(AstMemberSel* nodep) override {
         iterateChildren(nodep);
         editDType(nodep);
         if (auto* const classrefp = VN_CAST(nodep->fromp()->dtypep(), ClassRefDType)) {
             classEncapCheck(nodep, nodep->varp(), classrefp->classp());
         }  // else might be struct, etc
     }
-    virtual void visit(AstNodePreSel* nodep) override {  // LCOV_EXCL_LINE
+    void visit(AstNodePreSel* nodep) override {  // LCOV_EXCL_LINE
         // This check could go anywhere after V3Param
         nodep->v3fatalSrc("Presels should have been removed before this point");
     }
-    virtual void visit(AstNode* nodep) override {
+    void visit(AstNode* nodep) override {
         iterateChildren(nodep);
         editDType(nodep);
     }
@@ -243,7 +256,7 @@ public:
         // Don't want to repairCache, as all needed nodes have been added back in
         // a repair would prevent dead nodes from being detected
     }
-    virtual ~WidthCommitVisitor() override = default;
+    ~WidthCommitVisitor() override = default;
 };
 
 //######################################################################

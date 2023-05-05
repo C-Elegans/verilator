@@ -1,7 +1,7 @@
 #!/usr/bin/env perl
 ######################################################################
 #
-# Copyright 2003-2022 by Wilson Snyder. This program is free software; you
+# Copyright 2003-2023 by Wilson Snyder. This program is free software; you
 # can redistribute it and/or modify it under the terms of either the GNU
 # Lesser General Public License Version 3 or the Perl Artistic License
 # Version 2.0.
@@ -31,6 +31,7 @@ my $opt_gdb;
 my $opt_rr;
 my $opt_gdbbt;
 my $opt_quiet_exit;
+my $opt_unlimited_stack = 1;
 
 # No arguments can't do anything useful.  Give help
 if ($#ARGV < 0) {
@@ -49,16 +50,17 @@ foreach my $sw (@ARGV) {
 Getopt::Long::config("no_auto_abbrev", "pass_through");
 if (! GetOptions(
           # Major operating modes
-          "help"        => \&usage,
-          "debug"       => \&debug,
-          # "version!"  => \&version,   # Also passthru'ed
+          "help"             => \&usage,
+          "debug"            => \&debug,
+          # "version!"       => \&version,   # Also passthru'ed
           # Switches
-          "gdb!"        => \$opt_gdb,
-          "gdbbt!"      => \$opt_gdbbt,
-          "quiet-exit!" => \$opt_quiet_exit,
-          "rr!"         => \$opt_rr,
+          "gdb!"             => \$opt_gdb,
+          "gdbbt!"           => \$opt_gdbbt,
+          "quiet-exit!"      => \$opt_quiet_exit,
+          "rr!"              => \$opt_rr,
+          "unlimited-stack!" => \$opt_unlimited_stack,
           # Additional parameters
-          "<>"          => sub {},      # Ignored
+          "<>"               => sub {},      # Ignored
     )) {
     pod2usage(-exitstatus => 2, -verbose => 0);
 }
@@ -76,7 +78,8 @@ if ($opt_gdbbt && !gdb_works()) {
 my @quoted_sw = map { sh_escape($_) } @Opt_Verilator_Sw;
 if ($opt_gdb) {
     # Generic GDB interactive
-    run (aslr_off()
+    run (ulimit_stack_unlimited()
+         . aslr_off()
          . ($ENV{VERILATOR_GDB} || "gdb")
          . " " . verilator_bin()
          # Note, uncomment to set breakpoints before running:
@@ -92,12 +95,14 @@ if ($opt_gdb) {
          . " -ex 'bt'");
 } elsif ($opt_rr) {
     # Record with rr
-    run (aslr_off()
+    run (ulimit_stack_unlimited()
+         . aslr_off()
          . "rr record " . verilator_bin()
          . " " . join(' ', @quoted_sw));
 } elsif ($opt_gdbbt && $Debug) {
     # Run under GDB to get gdbbt
-    run (aslr_off()
+    run (ulimit_stack_unlimited()
+         . aslr_off()
          . "gdb"
          . " " . verilator_bin()
          . " --batch --quiet --return-child-result"
@@ -106,10 +111,13 @@ if ($opt_gdb) {
          . " -ex 'bt' -ex 'quit'");
 } elsif ($Debug) {
     # Debug
-    run(aslr_off() . verilator_bin() . " " . join(' ', @quoted_sw));
+    run(ulimit_stack_unlimited()
+        . aslr_off()
+        . verilator_bin()
+        . " " . join(' ', @quoted_sw));
 } else {
     # Normal, non gdb
-    run(verilator_bin() . " " . join(' ', @quoted_sw));
+    run(ulimit_stack_unlimited() . verilator_bin() . " " . join(' ', @quoted_sw));
 }
 
 #----------------------------------------------------------------------
@@ -180,6 +188,17 @@ sub aslr_off {
     }
 }
 
+sub ulimit_stack_unlimited {
+    return "" if !$opt_unlimited_stack;
+    system("ulimit -s unlimited 2>/dev/null");
+    my $status = $?;
+    if ($status == 0) {
+        return "ulimit -s unlimited 2>/dev/null; exec ";
+    } else {
+        return "";
+    }
+}
+
 sub run {
     # Run command, check errors
     my $command = shift;
@@ -244,6 +263,7 @@ Verilator - Translate and simulate SystemVerilog code using C++/SystemC
 
     verilator --help
     verilator --version
+    verilator --binary -j 0 [options] [source_files.v]... [opt_c_files.cpp/c/cc/a/o/so]
     verilator --cc [options] [source_files.v]... [opt_c_files.cpp/c/cc/a/o/so]
     verilator --sc [options] [source_files.v]... [opt_c_files.cpp/c/cc/a/o/so]
     verilator --lint-only -Wall [source_files.v]...
@@ -267,7 +287,7 @@ detailed descriptions of these arguments.
 
 =for VL_SPHINX_EXTRACT "_build/gen/args_verilator.rst"
 
-    <file.v>                    Verilog package, module and top module filenames
+    <file.v>                    Verilog package, module, and top module filenames
     <file.c/cc/cpp>             Optional C++ files to compile in
     <file.a/o/so>               Optional C++ files to link in
 
@@ -282,8 +302,10 @@ detailed descriptions of these arguments.
     --autoflush                 Flush streams after all $displays
     --bbox-sys                  Blackbox unknown $system calls
     --bbox-unsup                Blackbox unsupported language features
-    --bin <filename>            Override Verilator binary
+    --binary                    Build model binary
     --build                     Build model executable/library after Verilation
+    --build-dep-bin <filename>  Override build dependency Verilator binary
+    --build-jobs <jobs>         Parallelism for --build
     --cc                        Create C++ output
     --cdc                       Clock domain crossing analysis
      -CFLAGS <flags>            C++ compiler arguments for makefile
@@ -308,10 +330,15 @@ detailed descriptions of these arguments.
      +define+<var>=<value>      Set preprocessor define
     --dpi-hdr-only              Only produce the DPI header file
     --dump-defines              Show preprocessor defines with -E
-    --dump-tree                 Enable dumping .tree files
+    --dump-dfg                  Enable dumping DfgGraphs to .dot files
+    --dump-graph                Enable dumping V3Graphs to .dot files
+    --dump-tree                 Enable dumping Ast .tree files
     --dump-tree-addrids         Use short identifiers instead of addresses
-    --dump-treei <level>        Enable dumping .tree files at a level
-    --dump-treei-<srcfile> <level>  Enable dumping .tree file at a source file at a level
+    --dump-<srcfile>            Enable dumping everything in source file
+    --dumpi-dfg <level>         Enable dumping DfgGraphs to .dot files at level
+    --dumpi-graph <level>       Enable dumping V3Graphs to .dot files at level
+    --dumpi-tree <level>        Enable dumping Ast .tree files at level
+    --dumpi-<srcfile> <level>   Enable dumping everything in source file at level
      -E                         Preprocess, but do not compile
     --error-limit <value>       Abort after this number of errors
     --exe                       Link to create executable
@@ -327,6 +354,7 @@ detailed descriptions of these arguments.
     --gdbbt                     Run Verilator under GDB for backtrace
     --generate-key              Create random key for --protect-key
     --getenv <var>              Get environment variable with defaults
+    --get-supported <feature>   Get if feature is supported
     --help                      Display this help
     --hierarchical              Enable hierarchical Verilation
      -I<dir>                    Directory to search for includes
@@ -334,7 +362,7 @@ detailed descriptions of these arguments.
      +incdir+<dir>              Directory to search for includes
     --inline-mult <value>       Tune module inlining
     --instr-count-dpi <value>   Assumed dynamic instruction count of DPI imports
-     -j <jobs>                  Parallelism for --build
+     -j <jobs>                  Parallelism for --build-jobs/--verilate-jobs
     --l2-name <value>           Verilog scope name of the top module
     --language <lang>           Default language standard to parse
      -LDFLAGS <flags>           Linker pre-object arguments for makefile
@@ -343,6 +371,7 @@ detailed descriptions of these arguments.
     --lint-only                 Lint, but do not make output
     --make <build-tool>         Generate scripts for specified build tool
      -MAKEFLAGS <flags>         Arguments to pass to make during --build
+    --main                      Generate C++ main() file
     --max-num-width <value>     Maximum number width (default: 64K)
     --Mdir <directory>          Name of output object directory
     --MMD                       Create .d dependency files
@@ -350,7 +379,7 @@ detailed descriptions of these arguments.
     --MP                        Create phony dependency targets
      +notimingchecks            Ignored
      -O0                        Disable optimizations
-     -O3                        High performance optimizations
+     -O3                        High-performance optimizations
      -O<optimization-letter>    Selectable optimizations
      -o <executable>            Name of final executable
     --no-order-clock-delay      Disable ordering clock enable assignments
@@ -358,14 +387,14 @@ detailed descriptions of these arguments.
     --output-split-cfuncs <statements>   Split model functions
     --output-split-ctrace <statements>   Split tracing functions
      -P                         Disable line numbers and blanks with -E
-    --pins-bv <bits>            Specify types for top level ports
-    --pins-sc-biguint           Specify types for top level ports
-    --pins-sc-uint              Specify types for top level ports
-    --pins-uint8                Specify types for top level ports
+    --pins-bv <bits>            Specify types for top-level ports
+    --pins-sc-biguint           Specify types for top-level ports
+    --pins-sc-uint              Specify types for top-level ports
+    --pins-uint8                Specify types for top-level ports
     --no-pins64                 Don't use uint64_t's for 33-64 bit sigs
     --pipe-filter <command>     Filter all input through a script
     --pp-comments               Show preprocessor comments with -E
-    --prefix <topname>          Name of top level class
+    --prefix <topname>          Name of top-level class
     --private                   Debugging; see docs
     --prof-c                    Compile C++ code with profiling
     --prof-cfuncs               Name functions for profiling
@@ -375,6 +404,7 @@ detailed descriptions of these arguments.
     --protect-key <key>         Key for symbol protection
     --protect-lib <name>        Create a DPI protected library
     --public                    Debugging; see docs
+    --public-params             Mark all parameters as public_flat
     --public-flat-rw            Mark all variables, etc as public_flat_rw
      -pvalue+<name>=<value>     Overwrite toplevel parameter
     --quiet-exit                Don't print the command on failure
@@ -387,15 +417,19 @@ detailed descriptions of these arguments.
     --no-skip-identical         Disable skipping identical output
     --stats                     Create statistics file
     --stats-vars                Provide statistics on variables
+    --no-std                    Prevent parsing standard library
+    --structs-packed            Convert all unpacked structures to packed structures
      -sv                        Enable SystemVerilog parsing
      +systemverilogext+<ext>    Synonym for +1800-2017ext+<ext>
     --threads <threads>         Enable multithreading
     --threads-dpi <mode>        Enable multithreaded DPI
     --threads-max-mtasks <mtasks>  Tune maximum mtask partitioning
+    --timing                    Enable timing support
+    --no-timing                 Disable timing support
     --timescale <timescale>     Sets default timescale
     --timescale-override <timescale>  Overrides all timescales
     --top <topname>             Alias of --top-module
-    --top-module <topname>      Name of top level input module
+    --top-module <topname>      Name of top-level input module
     --trace                     Enable waveform creation
     --trace-coverage            Enable tracing of coverage
     --trace-depth <levels>      Depth of tracing
@@ -407,12 +441,14 @@ detailed descriptions of these arguments.
     --trace-threads <threads>   Enable FST waveform creation on separate threads
     --trace-underscore          Enable tracing of _signals
      -U<var>                    Undefine preprocessor define
+    --no-unlimited-stack        Don't disable stack size limit
     --unroll-count <loops>      Tune maximum loop iterations
     --unroll-stmts <stmts>      Tune maximum loop body size
     --unused-regexp <regexp>    Tune UNUSED lint signals
      -V                         Verbose version and config
      -v <filename>              Verilog library
-    --no-verilate               Skip verilation and just compile previously Verilated code.
+    --verilate-jobs             Job threads for Verilation stage
+    --no-verilate               Skip Verilation and just compile previously Verilated code
      +verilog1995ext+<ext>      Synonym for +1364-1995ext+<ext>
      +verilog2001ext+<ext>      Synonym for +1364-2001ext+<ext>
     --version                   Displays program version and exits
@@ -463,7 +499,7 @@ description of these arguments.
 
 The latest version is available from L<https://verilator.org>.
 
-Copyright 2003-2022 by Wilson Snyder. This program is free software; you can
+Copyright 2003-2023 by Wilson Snyder. This program is free software; you can
 redistribute it and/or modify the Verilator internals under the terms of
 either the GNU Lesser General Public License Version 3 or the Perl Artistic
 License Version 2.0.

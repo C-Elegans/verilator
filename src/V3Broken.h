@@ -6,7 +6,7 @@
 //
 //*************************************************************************
 //
-// Copyright 2003-2022 by Wilson Snyder. This program is free software; you
+// Copyright 2003-2023 by Wilson Snyder. This program is free software; you
 // can redistribute it and/or modify it under the terms of either the GNU
 // Lesser General Public License Version 3 or the Perl Artistic License
 // Version 2.0.
@@ -32,6 +32,9 @@ public:
     static bool isLinkable(const AstNode* nodep);
     static void addNewed(const AstNode* nodep);
     static void deleted(const AstNode* nodep);
+    // Called on error to say may be inside visitor,
+    // Disables checks that may misfire if not called at stable point between visitors
+    static void allowMidvisitorCheck(bool flag);
     static void selfTest();
 };
 

@@ -6,7 +6,7 @@
 //
 //*************************************************************************
 //
-// Copyright 2005-2022 by Wilson Snyder. This program is free software; you
+// Copyright 2005-2023 by Wilson Snyder. This program is free software; you
 // can redistribute it and/or modify it under the terms of either the GNU
 // Lesser General Public License Version 3 or the Perl Artistic License
 // Version 2.0.
@@ -17,15 +17,17 @@
 #include "config_build.h"
 #include "verilatedos.h"
 
-#include "V3Global.h"
-#include "V3Stats.h"
 #include "V3Ast.h"
 #include "V3File.h"
+#include "V3Global.h"
 #include "V3Os.h"
+#include "V3Stats.h"
 
 #include <iomanip>
 #include <map>
 #include <unordered_map>
+
+VL_DEFINE_DEBUG_FUNCTIONS;
 
 //######################################################################
 // Stats dumping
@@ -44,6 +46,8 @@ class StatsReport final {
         os << "Information:\n";
         os << "  " << V3Options::version() << '\n';
         os << "  Arguments: " << v3Global.opt.allArgsString() << '\n';
+        os << "  Build jobs: " << v3Global.opt.buildJobs() << '\n';
+        os << "  Verilate jobs: " << v3Global.opt.verilateJobs() << '\n';
         os << '\n';
     }
 
@@ -118,8 +122,9 @@ class StatsReport final {
             const V3Statistic* repp = &(*it);
             if (repp->stage() != "*" && repp->printit()) {
                 if (maxWidth < repp->name().length()) maxWidth = repp->name().length();
-                if (stageInt.find(repp->stage()) == stageInt.end()) {
-                    stageInt.emplace(repp->stage(), stage++);
+                const auto itFoundPair = stageInt.emplace(repp->stage(), stage);
+                if (itFoundPair.second) {
+                    ++stage;
                     stages.push_back(repp->stage());
                 }
                 byName.emplace(repp->name(), repp);
@@ -211,6 +216,7 @@ void V3Stats::statsStage(const string& name) {
     const double wallTimeDelta = wallTime - lastWallTime;
     lastWallTime = wallTime;
     V3Stats::addStatPerf("Stage, Elapsed time (sec), " + digitName, wallTimeDelta);
+    V3Stats::addStatPerf("Stage, Elapsed time (sec), TOTAL", wallTimeDelta);
 
     const double memory = V3Os::memUsageBytes() / 1024.0 / 1024.0;
     V3Stats::addStatPerf("Stage, Memory (MB), " + digitName, memory);
@@ -225,7 +231,7 @@ void V3Stats::statsReport() {
     std::ofstream* ofp{V3File::new_ofstream(filename)};
     if (ofp->fail()) v3fatal("Can't write " << filename);
 
-    const StatsReport reporter(ofp);
+    { StatsReport{ofp}; }  // Destruct before cleanup
 
     // Cleanup
     ofp->close();

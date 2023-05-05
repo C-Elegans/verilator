@@ -1,4 +1,4 @@
-.. Copyright 2003-2022 by Wilson Snyder.
+.. Copyright 2003-2023 by Wilson Snyder.
 .. SPDX-License-Identifier: LGPL-3.0-only OR Artistic-2.0
 
 *****
@@ -50,7 +50,7 @@ For --cc/--sc, it creates:
      - Make include file with class names (from --make gmake)
    * - *{prefix}*\ _hier.mk
      - Make file for hierarchy blocks (from --make gmake)
-   * - *{prefix|*\ _hierMkArgs.f
+   * - *{prefix}*\ _hierMkArgs.f
      - Arguments for hierarchical Verilation (from --make gmake)
    * - *{prefix}*\ _hierCMakeArgs.f
      - Arguments for hierarchical Verilation (from --make cmake)
@@ -59,16 +59,20 @@ For --cc/--sc, it creates:
    * - *{prefix}*\ .cpp
      - Model C++ file
    * - *{prefix}*\ ___024root.h
-     - Top level (SystemVerilog $root) internal header file
+     - Top-level internal header file (from SystemVerilog $root)
    * - *{prefix}*\ ___024root.cpp
-     - Top level (SystemVerilog $root) internal C++ file
-   * - *{prefix}*___024root*{__n}*\ .cpp
-     - Additional top level internal C++ files (from --output-split)
+     - Top-level internal C++ file (from SystemVerilog $root)
+   * - *{prefix}*\ ___024root\ *{__n}*\ .cpp
+     - Additional top-level internal C++ files
+   * - *{prefix}*\ ___024root\ *{__DepSet_hash__n}*\ .cpp
+     - Additional top-level internal C++ files (hashed to reduce build times)
    * - *{prefix}*\ ___024root__Slow\ *{__n}*\ .cpp
      - Infrequent cold routines
-   * - *{prefix}*\ ___024root__Trace{__n}*\ .cpp
+   * - *{prefix}*\ ___024root\ *{__DepSet_hash__n}*\ .cpp
+     - Infrequent cold routines (hashed to reduce build times)
+   * - *{prefix}*\ ___024root__Trace\ *{__n}*\ .cpp
      - Wave file generation code (from --trace)
-   * - *{prefix}*\ ___024root__Trace__Slow{__n}*\ .cpp
+   * - *{prefix}*\ ___024root__Trace__Slow\ *{__n}*\ .cpp
      - Wave file generation code (from --trace)
    * - *{prefix}*\ __Dpi.h
      - DPI import and export declarations (from --dpi)
@@ -87,7 +91,9 @@ For --cc/--sc, it creates:
    * - *{prefix}{each_verilog_module}*\ .cpp
      - Lower level internal C++ files
    * - *{prefix}{each_verilog_module}{__n}*\ .cpp
-     - Additional lower C++ files (from --output-split)
+     - Additional lower C++ files
+   * - *{prefix}{each_verilog_module}{__DepSet_hash__n}*\ .cpp
+     - Additional lower C++ files (hashed to reduce build times)
 
 For --hierarchy mode, it creates:
 
@@ -100,7 +106,7 @@ For --hierarchy mode, it creates:
    * - *{prefix}*\ __hier.dir
      - Directory to store .dot, .vpp, .tree of top module (from --hierarchy)
 
-In certain debug and other modes, it also creates:
+In specific debug and other modes, it also creates:
 
 .. list-table::
 

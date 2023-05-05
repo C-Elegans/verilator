@@ -12,11 +12,14 @@ module t (/*AUTOARG*/
    input clk;
 
    integer cyc;
+   integer seed = 123;
 
    always @ (posedge clk) begin
       cyc <= cyc + 1;
-      if (cyc!=0) begin
-         if (cyc==10) begin
+      if (cyc != 0) begin
+         if (cyc == 10) begin
+            #5;
+            $display("dist: %f ", $dist_poisson(seed, 12));  // Get verilated_probdist.cpp
             $write("*-* All Finished *-*\n");
             $finish;
          end

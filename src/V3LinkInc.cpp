@@ -6,7 +6,7 @@
 //
 //*************************************************************************
 //
-// Copyright 2003-2022 by Wilson Snyder. This program is free software; you
+// Copyright 2003-2023 by Wilson Snyder. This program is free software; you
 // can redistribute it and/or modify it under the terms of either the GNU
 // Lesser General Public License Version 3 or the Perl Artistic License
 // Version 2.0.
@@ -15,7 +15,7 @@
 //*************************************************************************
 // V3LinkInc's Transformations:
 //
-//      prepost_stmt_visit
+//      prepost_expr_visit
 //        PREADD/PRESUB
 //          Create a temporary __VIncrementX variable, assign the value of
 //          the current variable value to it, substitute the current
@@ -27,7 +27,7 @@
 //          Create a temporary __VIncrementX variable, assign the value of
 //          of the current variable (after the operation) to it. Substitute
 //          The original variable with the temporary one in the statement.
-//      prepost_non_stmt_visit
+//      prepost_stmt_visit
 //        PREADD/PRESUB/POSTADD/POSTSUB
 //          Increment/decrement the current variable by the given value.
 //          The order (pre/post) doesn't matter outside statements thus
@@ -39,11 +39,14 @@
 #include "config_build.h"
 #include "verilatedos.h"
 
-#include "V3Global.h"
 #include "V3LinkInc.h"
+
 #include "V3Ast.h"
+#include "V3Global.h"
 
 #include <algorithm>
+
+VL_DEFINE_DEBUG_FUNCTIONS;
 
 //######################################################################
 
@@ -57,22 +60,21 @@ private:
     };
 
     // STATE
+    AstNodeFTask* m_ftaskp = nullptr;  // Function or task we're inside
     int m_modIncrementsNum = 0;  // Var name counter
     InsertMode m_insMode = IM_BEFORE;  // How to insert
     AstNode* m_insStmtp = nullptr;  // Where to insert statement
     bool m_unsupportedHere = false;  // Used to detect where it's not supported yet
 
     // METHODS
-    VL_DEBUG_FUNC;  // Declare debug()
-
     void insertBeforeStmt(AstNode* nodep, AstNode* newp) {
         // Return node that must be visited, if any
         // See also AstNode::addBeforeStmt; this predates that function
-        if (debug() >= 9) newp->dumpTree(cout, "-newstmt:");
+        if (debug() >= 9) newp->dumpTree("-  newstmt: ");
         UASSERT_OBJ(m_insStmtp, nodep, "Function not underneath a statement");
         if (m_insMode == IM_BEFORE) {
             // Add the whole thing before insertAt
-            if (debug() >= 9) newp->dumpTree(cout, "-newfunc:");
+            if (debug() >= 9) newp->dumpTree("-  newfunc: ");
             m_insStmtp->addHereThisAsNext(newp);
         } else if (m_insMode == IM_AFTER) {
             m_insStmtp->addNextHere(newp);
@@ -83,17 +85,20 @@ private:
         } else {
             nodep->v3fatalSrc("Unknown InsertMode");
         }
-        m_insMode = IM_AFTER;
-        m_insStmtp = newp;
     }
 
     // VISITORS
-    virtual void visit(AstNodeModule* nodep) override {
+    void visit(AstNodeModule* nodep) override {
         VL_RESTORER(m_modIncrementsNum);
         m_modIncrementsNum = 0;
         iterateChildren(nodep);
     }
-    virtual void visit(AstWhile* nodep) override {
+    void visit(AstNodeFTask* nodep) override {
+        VL_RESTORER(m_ftaskp);
+        m_ftaskp = nodep;
+        iterateChildren(nodep);
+    }
+    void visit(AstWhile* nodep) override {
         // Special, as statements need to be put in different places
         // Preconditions insert first just before themselves (the normal
         // rule for other statement types)
@@ -105,12 +110,12 @@ private:
         iterateAndNextNull(nodep->condp());
         // Body insert just before themselves
         m_insStmtp = nullptr;  // First thing should be new statement
-        iterateAndNextNull(nodep->bodysp());
+        iterateAndNextNull(nodep->stmtsp());
         iterateAndNextNull(nodep->incsp());
         // Done the loop
         m_insStmtp = nullptr;  // Next thing should be new statement
     }
-    virtual void visit(AstForeach* nodep) override {
+    void visit(AstForeach* nodep) override {
         // Special, as statements need to be put in different places
         // Body insert just before themselves
         m_insStmtp = nullptr;  // First thing should be new statement
@@ -118,7 +123,7 @@ private:
         // Done the loop
         m_insStmtp = nullptr;  // Next thing should be new statement
     }
-    virtual void visit(AstJumpBlock* nodep) override {
+    void visit(AstJumpBlock* nodep) override {
         // Special, as statements need to be put in different places
         // Body insert just before themselves
         m_insStmtp = nullptr;  // First thing should be new statement
@@ -126,15 +131,15 @@ private:
         // Done the loop
         m_insStmtp = nullptr;  // Next thing should be new statement
     }
-    virtual void visit(AstNodeIf* nodep) override {
+    void visit(AstNodeIf* nodep) override {
         m_insStmtp = nodep;
         iterateAndNextNull(nodep->condp());
         m_insStmtp = nullptr;
-        iterateAndNextNull(nodep->ifsp());
+        iterateAndNextNull(nodep->thensp());
         iterateAndNextNull(nodep->elsesp());
         m_insStmtp = nullptr;
     }
-    virtual void visit(AstCaseItem* nodep) override {
+    void visit(AstCaseItem* nodep) override {
         m_insMode = IM_BEFORE;
         {
             VL_RESTORER(m_unsupportedHere);
@@ -142,17 +147,32 @@ private:
             iterateAndNextNull(nodep->condsp());
         }
         m_insStmtp = nullptr;  // Next thing should be new statement
-        iterateAndNextNull(nodep->bodysp());
+        iterateAndNextNull(nodep->stmtsp());
     }
-    virtual void visit(AstNodeFor* nodep) override {  // LCOV_EXCL_LINE
+    void visit(AstNodeFor* nodep) override {  // LCOV_EXCL_LINE
         nodep->v3fatalSrc(
             "For statements should have been converted to while statements in V3Begin.cpp");
     }
-    virtual void visit(AstNodeStmt* nodep) override {
-        if (!nodep->isStatement()) {
-            iterateChildren(nodep);
-            return;
-        }
+    void visit(AstDelay* nodep) override {
+        m_insStmtp = nodep;
+        iterateAndNextNull(nodep->lhsp());
+        m_insStmtp = nullptr;
+        iterateAndNextNull(nodep->stmtsp());
+        m_insStmtp = nullptr;
+    }
+    void visit(AstEventControl* nodep) override {
+        m_insStmtp = nullptr;
+        iterateAndNextNull(nodep->stmtsp());
+        m_insStmtp = nullptr;
+    }
+    void visit(AstWait* nodep) override {
+        m_insStmtp = nodep;
+        iterateAndNextNull(nodep->condp());
+        m_insStmtp = nullptr;
+        iterateAndNextNull(nodep->stmtsp());
+        m_insStmtp = nullptr;
+    }
+    void visit(AstNodeStmt* nodep) override {
         m_insMode = IM_BEFORE;
         m_insStmtp = nodep;
         iterateChildren(nodep);
@@ -164,51 +184,68 @@ private:
         UINFO(9, "Marking unsupported " << nodep << endl);
         iterateChildren(nodep);
     }
-    virtual void visit(AstLogAnd* nodep) override { unsupported_visit(nodep); }
-    virtual void visit(AstLogOr* nodep) override { unsupported_visit(nodep); }
-    virtual void visit(AstLogEq* nodep) override { unsupported_visit(nodep); }
-    virtual void visit(AstLogIf* nodep) override { unsupported_visit(nodep); }
-    virtual void visit(AstNodeCond* nodep) override { unsupported_visit(nodep); }
+    void visit(AstLogAnd* nodep) override { unsupported_visit(nodep); }
+    void visit(AstLogOr* nodep) override { unsupported_visit(nodep); }
+    void visit(AstLogEq* nodep) override { unsupported_visit(nodep); }
+    void visit(AstLogIf* nodep) override { unsupported_visit(nodep); }
+    void visit(AstNodeCond* nodep) override { unsupported_visit(nodep); }
+    void visit(AstPropSpec* nodep) override { unsupported_visit(nodep); }
     void prepost_visit(AstNodeTriop* nodep) {
         // Check if we are underneath a statement
         if (!m_insStmtp) {
-            prepost_non_stmt_visit(nodep);
-        } else {
             prepost_stmt_visit(nodep);
+        } else {
+            prepost_expr_visit(nodep);
         }
     }
-    void prepost_non_stmt_visit(AstNodeTriop* nodep) {
+    void prepost_stmt_visit(AstNodeTriop* nodep) {
         iterateChildren(nodep);
+
+        // Currently we can't reference the target, so we just copy the AST both for read and
+        // write, but doing so would double any side-effects, so as a safety measure all
+        // statements which could have side-effects are banned at the moment.
+        if (!nodep->rhsp()->isTreePureRecurse()) {
+            nodep->rhsp()->v3warn(E_UNSUPPORTED,
+                                  "Unsupported: Inc/Dec of expression with side-effects");
+            return;
+        }
 
         AstConst* const constp = VN_AS(nodep->lhsp(), Const);
         UASSERT_OBJ(nodep, constp, "Expecting CONST");
         AstConst* const newconstp = constp->cloneTree(true);
 
-        AstNode* const storetop = nodep->thsp();
-        AstNode* const valuep = nodep->rhsp();
-
-        storetop->unlinkFrBack();
-        valuep->unlinkFrBack();
+        AstNodeExpr* const storeTop = nodep->thsp()->unlinkFrBack();
+        AstNodeExpr* const valuep = nodep->rhsp()->unlinkFrBack();
 
         AstAssign* assignp;
         if (VN_IS(nodep, PreSub) || VN_IS(nodep, PostSub)) {
-            assignp = new AstAssign(nodep->fileline(), storetop,
-                                    new AstSub(nodep->fileline(), valuep, newconstp));
+            assignp = new AstAssign{nodep->fileline(), storeTop,
+                                    new AstSub{nodep->fileline(), valuep, newconstp}};
         } else {
-            assignp = new AstAssign(nodep->fileline(), storetop,
-                                    new AstAdd(nodep->fileline(), valuep, newconstp));
+            assignp = new AstAssign{nodep->fileline(), storeTop,
+                                    new AstAdd{nodep->fileline(), valuep, newconstp}};
         }
         nodep->replaceWith(assignp);
         VL_DO_DANGLING(nodep->deleteTree(), nodep);
     }
-    void prepost_stmt_visit(AstNodeTriop* nodep) {
+    void prepost_expr_visit(AstNodeTriop* nodep) {
         iterateChildren(nodep);
 
-        const AstNodeVarRef* varrefp = nullptr;
-        if (m_unsupportedHere || !(varrefp = VN_CAST(nodep->rhsp(), VarRef))) {
+        // Currently we can't reference the target, so we just copy the AST both for read and
+        // write, but doing so would double any side-effects, so as a safety measure all
+        // statements which could have side-effects are banned at the moment.
+        if (!nodep->rhsp()->isTreePureRecurse()) {
+            nodep->rhsp()->v3warn(E_UNSUPPORTED,
+                                  "Unsupported: Inc/Dec of expression with side-effects");
+            return;
+        }
+
+        if (m_unsupportedHere) {
             nodep->v3warn(E_UNSUPPORTED, "Unsupported: Incrementation in this context.");
             return;
         }
+        AstNodeExpr* const readp = nodep->rhsp();
+        AstNodeExpr* const writep = nodep->thsp();
 
         AstConst* const constp = VN_AS(nodep->lhsp(), Const);
         UASSERT_OBJ(nodep, constp, "Expecting CONST");
@@ -217,56 +254,54 @@ private:
 
         // Prepare a temporary variable
         FileLine* const fl = backp->fileline();
-        const string name = string("__Vincrement") + cvtToStr(++m_modIncrementsNum);
-        AstVar* const varp = new AstVar(fl, VVarType::BLOCKTEMP, name, VFlagChildDType(),
-                                        varrefp->varp()->subDTypep()->cloneTree(true));
+        const string name = string{"__Vincrement"} + cvtToStr(++m_modIncrementsNum);
+        AstVar* const varp = new AstVar{
+            fl, VVarType::BLOCKTEMP, name, VFlagChildDType{},
+            new AstRefDType{fl, AstRefDType::FlagTypeOfExpr{}, readp->cloneTree(true)}};
+        if (m_ftaskp) varp->funcLocal(true);
 
         // Declare the variable
         insertBeforeStmt(nodep, varp);
 
         // Define what operation will we be doing
-        AstNode* operp;
+        AstNodeExpr* operp;
         if (VN_IS(nodep, PostSub) || VN_IS(nodep, PreSub)) {
-            operp = new AstSub(fl, new AstVarRef(fl, varrefp->varp(), VAccess::READ), newconstp);
+            operp = new AstSub{fl, readp->cloneTree(true), newconstp};
         } else {
-            operp = new AstAdd(fl, new AstVarRef(fl, varrefp->varp(), VAccess::READ), newconstp);
+            operp = new AstAdd{fl, readp->cloneTree(true), newconstp};
         }
 
         if (VN_IS(nodep, PreAdd) || VN_IS(nodep, PreSub)) {
             // PreAdd/PreSub operations
             // Immediately after declaration - increment it by one
-            m_insStmtp->addHereThisAsNext(
-                new AstAssign(fl, new AstVarRef(fl, varp, VAccess::WRITE), operp));
+            varp->addNextHere(new AstAssign{fl, writep->cloneTree(true),
+                                            new AstVarRef{fl, varp, VAccess::READ}});
             // Immediately after incrementing - assign it to the original variable
-            m_insStmtp->addHereThisAsNext(
-                new AstAssign(fl, new AstVarRef(fl, varrefp->varp(), VAccess::WRITE),
-                              new AstVarRef(fl, varp, VAccess::READ)));
+            varp->addNextHere(new AstAssign{fl, new AstVarRef{fl, varp, VAccess::WRITE}, operp});
         } else {
             // PostAdd/PostSub operations
             // assign the original variable to the temporary one
-            m_insStmtp->addHereThisAsNext(
-                new AstAssign(fl, new AstVarRef(fl, varp, VAccess::WRITE),
-                              new AstVarRef(fl, varrefp->varp(), VAccess::READ)));
+            varp->addNextHere(new AstAssign{fl, writep->cloneTree(true), operp});
             // Increment the original variable by one
-            m_insStmtp->addHereThisAsNext(
-                new AstAssign(fl, new AstVarRef(fl, varrefp->varp(), VAccess::WRITE), operp));
+            varp->addNextHere(new AstAssign{fl, new AstVarRef{fl, varp, VAccess::WRITE},
+                                            readp->cloneTree(true)});
         }
 
         // Replace the node with the temporary
-        nodep->replaceWith(new AstVarRef(varrefp->fileline(), varp, VAccess::WRITE));
+        nodep->replaceWith(new AstVarRef{readp->fileline(), varp, VAccess::READ});
         VL_DO_DANGLING(nodep->deleteTree(), nodep);
     }
-    virtual void visit(AstPreAdd* nodep) override { prepost_visit(nodep); }
-    virtual void visit(AstPostAdd* nodep) override { prepost_visit(nodep); }
-    virtual void visit(AstPreSub* nodep) override { prepost_visit(nodep); }
-    virtual void visit(AstPostSub* nodep) override { prepost_visit(nodep); }
-    virtual void visit(AstGenFor* nodep) override { iterateChildren(nodep); }
-    virtual void visit(AstNode* nodep) override { iterateChildren(nodep); }
+    void visit(AstPreAdd* nodep) override { prepost_visit(nodep); }
+    void visit(AstPostAdd* nodep) override { prepost_visit(nodep); }
+    void visit(AstPreSub* nodep) override { prepost_visit(nodep); }
+    void visit(AstPostSub* nodep) override { prepost_visit(nodep); }
+    void visit(AstGenFor* nodep) override { iterateChildren(nodep); }
+    void visit(AstNode* nodep) override { iterateChildren(nodep); }
 
 public:
     // CONSTRUCTORS
     explicit LinkIncVisitor(AstNetlist* nodep) { iterate(nodep); }
-    virtual ~LinkIncVisitor() override = default;
+    ~LinkIncVisitor() override = default;
 };
 
 //######################################################################
@@ -275,5 +310,5 @@ public:
 void V3LinkInc::linkIncrements(AstNetlist* nodep) {
     UINFO(2, __FUNCTION__ << ": " << endl);
     { LinkIncVisitor{nodep}; }  // Destruct before checking
-    V3Global::dumpCheckGlobalTree("linkinc", 0, v3Global.opt.dumpTreeLevel(__FILE__) >= 3);
+    V3Global::dumpCheckGlobalTree("linkinc", 0, dumpTreeLevel() >= 3);
 }

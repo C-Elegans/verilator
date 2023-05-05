@@ -9,17 +9,18 @@
 #include <verilated.h>
 #include <verilated_syms.h>
 #include <verilated_vcd_c.h>
-#include <map>
-#include <string>
 
 #include "Vt_scope_map.h"
 
+#include <map>
+#include <string>
+
 const unsigned long long dt_2 = 3;
 
-int main(int argc, char** argv, char** env) {
+int main(int argc, char** argv) {
     const std::unique_ptr<VerilatedContext> contextp{new VerilatedContext};
 
-    Vt_scope_map* top = new Vt_scope_map{contextp.get(), "top"};
+    VM_PREFIX* top = new VM_PREFIX{contextp.get(), "top"};
 
     contextp->debug(0);
     contextp->traceEverOn(true);
@@ -99,7 +100,7 @@ int main(int argc, char** argv, char** env) {
 #endif
 
             // Clear out the data
-            memset(varData, 0, (varBits + 7) / 8);
+            std::memset(varData, 0, (varBits + 7) / 8);
         }
     }
 

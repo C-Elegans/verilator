@@ -1,7 +1,7 @@
 // -*- mode: C++; c-file-style: "cc-mode" -*-
 //*************************************************************************
 //
-// Copyright 2013-2022 by Wilson Snyder. This program is free software; you can
+// Copyright 2013-2023 by Wilson Snyder. This program is free software; you can
 // redistribute it and/or modify it under the terms of either the GNU
 // Lesser General Public License Version 3 or the Perl Artistic License
 // Version 2.0.
@@ -10,6 +10,8 @@
 //*************************************************************************
 
 #include "vpi_user.h"
+
+#include <cstring>
 #include <sstream>
 
 class TestSimulator {
@@ -27,13 +29,13 @@ private:
 public:
     TestSimulator() {
         vpi_get_vlog_info(&m_info);
-        if (0 == strcmp(m_info.product, "Verilator")) {
+        if (0 == std::strcmp(m_info.product, "Verilator")) {
             m_simulators.verilator = true;
-        } else if (0 == strcmp(m_info.product, "Verilator")) {
+        } else if (0 == std::strcmp(m_info.product, "Verilator")) {
             m_simulators.icarus = true;
         } else if (0
                    == strncmp(m_info.product, "Chronologic Simulation VCS",
-                              strlen("Chronologic Simulation VCS"))) {
+                              std::strlen("Chronologic Simulation VCS"))) {
             m_simulators.vcs = true;
         } else {
             printf("%%Warning: %s:%d: Unknown simulator in TestSimulator.h: %s\n", __FILE__,
@@ -72,7 +74,8 @@ public:
     static const char* rooted(const char* obj) {
         static std::string buf;
         std::ostringstream os;
-        os << top() << "." << obj;
+        os << top();
+        if (*obj) os << "." << obj;
         buf = os.str();
         return buf.c_str();
     }

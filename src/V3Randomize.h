@@ -6,7 +6,7 @@
 //
 //*************************************************************************
 //
-// Copyright 2003-2022 by Wilson Snyder. This program is free software; you
+// Copyright 2003-2023 by Wilson Snyder. This program is free software; you
 // can redistribute it and/or modify it under the terms of either the GNU
 // Lesser General Public License Version 3 or the Perl Artistic License
 // Version 2.0.
@@ -29,6 +29,7 @@ public:
     static void randomizeNetlist(AstNetlist* nodep);
 
     static AstFunc* newRandomizeFunc(AstClass* nodep);
+    static AstFunc* newSRandomFunc(AstClass* nodep);
 };
 
 #endif  // Guard

@@ -3,7 +3,7 @@
 //
 // Code available from: https://verilator.org
 //
-// Copyright 2001-2022 by Wilson Snyder. This program is free software; you
+// Copyright 2001-2023 by Wilson Snyder. This program is free software; you
 // can redistribute it and/or modify it under the terms of either the GNU
 // Lesser General Public License Version 3 or the Perl Artistic License
 // Version 2.0.
@@ -43,17 +43,19 @@ public:
     using Super = VerilatedTrace<VerilatedFst, VerilatedFstBuffer>;
 
 private:
-    friend Buffer;  // Give the buffer access to the private bits
+    friend VerilatedFstBuffer;  // Give the buffer access to the private bits
 
     //=========================================================================
     // FST specific internals
 
-    void* m_fst;
+    void* m_fst = nullptr;
     std::map<uint32_t, fstHandle> m_code2symbol;
     std::map<int, fstEnumHandle> m_local2fstdtype;
     std::list<std::string> m_curScope;
     fstHandle* m_symbolp = nullptr;  // same as m_code2symbol, but as an array
-    char* m_strbuf = nullptr;  // String buffer long enough to hold maxBits() chars
+    char* m_strbufp = nullptr;  // String buffer long enough to hold maxBits() chars
+
+    bool m_useFstWriterThread = false;  // Whether to use the separate FST writer thread
 
     // CONSTRUCTORS
     VL_UNCOPYABLE(VerilatedFst);
@@ -65,15 +67,18 @@ protected:
     // Implementation of VerilatedTrace interface
 
     // Called when the trace moves forward to a new time point
-    virtual void emitTimeChange(uint64_t timeui) override;
+    void emitTimeChange(uint64_t timeui) override;
 
     // Hooks called from VerilatedTrace
-    virtual bool preFullDump() override { return isOpen(); }
-    virtual bool preChangeDump() override { return isOpen(); }
+    bool preFullDump() override { return isOpen(); }
+    bool preChangeDump() override { return isOpen(); }
 
     // Trace buffer management
-    virtual VerilatedFstBuffer* getTraceBuffer() override;
-    virtual void commitTraceBuffer(VerilatedFstBuffer*) override;
+    Buffer* getTraceBuffer() override;
+    void commitTraceBuffer(Buffer*) override;
+
+    // Configure sub-class
+    void configure(const VerilatedTraceConfig&) override;
 
 public:
     //=========================================================================
@@ -96,6 +101,8 @@ public:
     //=========================================================================
     // Internal interface to Verilator generated code
 
+    void declEvent(uint32_t code, const char* name, int dtypenum, fstVarDir vardir,
+                   fstVarType vartype, bool array, int arraynum);
     void declBit(uint32_t code, const char* name, int dtypenum, fstVarDir vardir,
                  fstVarType vartype, bool array, int arraynum);
     void declBus(uint32_t code, const char* name, int dtypenum, fstVarDir vardir,
@@ -113,46 +120,57 @@ public:
 
 #ifndef DOXYGEN
 // Declare specialization here as it's used in VerilatedFstC just below
-template <> void VerilatedFst::Super::dump(uint64_t time);
-template <> void VerilatedFst::Super::set_time_unit(const char* unitp);
-template <> void VerilatedFst::Super::set_time_unit(const std::string& unit);
-template <> void VerilatedFst::Super::set_time_resolution(const char* unitp);
-template <> void VerilatedFst::Super::set_time_resolution(const std::string& unit);
-template <> void VerilatedFst::Super::dumpvars(int level, const std::string& hier);
+template <>
+void VerilatedFst::Super::dump(uint64_t time);
+template <>
+void VerilatedFst::Super::set_time_unit(const char* unitp);
+template <>
+void VerilatedFst::Super::set_time_unit(const std::string& unit);
+template <>
+void VerilatedFst::Super::set_time_resolution(const char* unitp);
+template <>
+void VerilatedFst::Super::set_time_resolution(const std::string& unit);
+template <>
+void VerilatedFst::Super::dumpvars(int level, const std::string& hier);
 #endif
 
 //=============================================================================
 // VerilatedFstBuffer
 
-class VerilatedFstBuffer final : public VerilatedTraceBuffer<VerilatedFst, VerilatedFstBuffer> {
+class VerilatedFstBuffer VL_NOT_FINAL {
     // Give the trace file access to the private bits
     friend VerilatedFst;
     friend VerilatedFst::Super;
+    friend VerilatedFst::Buffer;
+    friend VerilatedFst::OffloadBuffer;
+
+    VerilatedFst& m_owner;  // Trace file owning this buffer. Required by subclasses.
 
     // The FST file handle
     void* const m_fst = m_owner.m_fst;
     // code to fstHande map, as an array
     const fstHandle* const m_symbolp = m_owner.m_symbolp;
     // String buffer long enough to hold maxBits() chars
-    char* const m_strbuf = m_owner.m_strbuf;
+    char* const m_strbufp = m_owner.m_strbufp;
 
-public:
     // CONSTRUCTOR
-    explicit VerilatedFstBuffer(VerilatedFst& owner);
-    ~VerilatedFstBuffer() = default;
+    explicit VerilatedFstBuffer(VerilatedFst& owner)
+        : m_owner{owner} {}
+    virtual ~VerilatedFstBuffer() = default;
 
     //=========================================================================
     // Implementation of VerilatedTraceBuffer interface
 
     // Implementations of duck-typed methods for VerilatedTraceBuffer. These are
     // called from only one place (the full* methods), so always inline them.
-    VL_ATTR_ALWINLINE inline void emitBit(uint32_t code, CData newval);
-    VL_ATTR_ALWINLINE inline void emitCData(uint32_t code, CData newval, int bits);
-    VL_ATTR_ALWINLINE inline void emitSData(uint32_t code, SData newval, int bits);
-    VL_ATTR_ALWINLINE inline void emitIData(uint32_t code, IData newval, int bits);
-    VL_ATTR_ALWINLINE inline void emitQData(uint32_t code, QData newval, int bits);
-    VL_ATTR_ALWINLINE inline void emitWData(uint32_t code, const WData* newvalp, int bits);
-    VL_ATTR_ALWINLINE inline void emitDouble(uint32_t code, double newval);
+    VL_ATTR_ALWINLINE void emitEvent(uint32_t code, VlEvent newval);
+    VL_ATTR_ALWINLINE void emitBit(uint32_t code, CData newval);
+    VL_ATTR_ALWINLINE void emitCData(uint32_t code, CData newval, int bits);
+    VL_ATTR_ALWINLINE void emitSData(uint32_t code, SData newval, int bits);
+    VL_ATTR_ALWINLINE void emitIData(uint32_t code, IData newval, int bits);
+    VL_ATTR_ALWINLINE void emitQData(uint32_t code, QData newval, int bits);
+    VL_ATTR_ALWINLINE void emitWData(uint32_t code, const WData* newvalp, int bits);
+    VL_ATTR_ALWINLINE void emitDouble(uint32_t code, double newval);
 };
 
 //=============================================================================
@@ -217,7 +235,7 @@ public:
     }
 
     // Internal class access
-    inline VerilatedFst* spTrace() { return &m_sptrace; }
+    VerilatedFst* spTrace() { return &m_sptrace; }
 };
 
 #endif  // guard

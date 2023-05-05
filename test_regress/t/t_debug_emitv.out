@@ -7,24 +7,15 @@ module Vt_debug_emitv_t;
     ???? // ENUMITEM 'ZERO'
     32'h0
     ???? // ENUMITEM 'ONE'
-    'sh1
-    ???? // REFDTYPE 'e_t'
-    struct packed 
-    {
-        ???? // REFDTYPE 'e_t'
-         a}signed logic [2:0] struct 
-    {signed logic [2:0]  a}logicunion 
-    {logic a}
-    ???? // REFDTYPE 'ps_t'
-    bit [31:0] const 
-    ???? // REFDTYPE 'ps_t'
-    const 
-    ???? // REFDTYPE 'ps_t'
-    [0:2]
-    ???? // REFDTYPE 'us_t'
-
-    ???? // REFDTYPE 'union_t'
-    signed int [31:0] signed int [31:0] [0:2]logic [15:0] logic [15:0] logic [15:0] signed int [31:0] signed int [31:0] signed int [31:0] 
+    32'h1signed int [31:0] struct packed 
+    {signed int [31:0]  a;}signed logic [2:0] struct 
+    {signed logic [2:0]  a;}logicunion 
+    {logic a;}struct packed 
+    {signed int [31:0]  a;}bit [31:0] const struct packed 
+    {signed int [31:0]  a;}const struct packed 
+    {signed int [31:0]  a;}[0:2]struct 
+    {signed logic [2:0]  a;}union 
+    {logic a;}signed int [31:0] signed int [31:0] [0:2]logic [15:0] logic [15:0] logic [15:0] signed int [31:0] signed int [31:0] signed int [31:0] 
     ???? // QUEUEDTYPE
     signed int [31:0] string
     ???? // ASSOCARRAYDTYPE
@@ -32,23 +23,16 @@ module Vt_debug_emitv_t;
     ???? // UNSIZEDARRAYDTYPE
 
     ???? // DYNARRAYDTYPE
-    signed int [31:0] signed int [31:0] signed int [31:0] signed int [31:0] signed int [31:0] signed int [31:0] signed int [31:0] signed realstringIData [31:0] signed logic [31:0] signed int [31:0] logic [2:0] logic [0:0]  e_t;
+    signed int [31:0] signed int [31:0] signed int [31:0] signed int [31:0] signed int [31:0] signed int [31:0] signed int [31:0] signed realstringIData [31:0] signed logic [31:0] signed int [31:0] bit [0:0] logic [0:0]  e_t;
     typedef struct packed 
-    {
-        ???? // REFDTYPE 'e_t'
-         a}signed logic [2:0] struct 
-    {signed logic [2:0]  a}logicunion 
-    {logic a}
-    ???? // REFDTYPE 'ps_t'
-    bit [31:0] const 
-    ???? // REFDTYPE 'ps_t'
-    const 
-    ???? // REFDTYPE 'ps_t'
-    [0:2]
-    ???? // REFDTYPE 'us_t'
-
-    ???? // REFDTYPE 'union_t'
-    signed int [31:0] signed int [31:0] [0:2]logic [15:0] logic [15:0] logic [15:0] signed int [31:0] signed int [31:0] signed int [31:0] 
+    {signed int [31:0]  a;}signed logic [2:0] struct 
+    {signed logic [2:0]  a;}logicunion 
+    {logic a;}struct packed 
+    {signed int [31:0]  a;}bit [31:0] const struct packed 
+    {signed int [31:0]  a;}const struct packed 
+    {signed int [31:0]  a;}[0:2]struct 
+    {signed logic [2:0]  a;}union 
+    {logic a;}signed int [31:0] signed int [31:0] [0:2]logic [15:0] logic [15:0] logic [15:0] signed int [31:0] signed int [31:0] signed int [31:0] 
     ???? // QUEUEDTYPE
     signed int [31:0] string
     ???? // ASSOCARRAYDTYPE
@@ -56,20 +40,15 @@ module Vt_debug_emitv_t;
     ???? // UNSIZEDARRAYDTYPE
 
     ???? // DYNARRAYDTYPE
-    signed int [31:0] signed int [31:0] signed int [31:0] signed int [31:0] signed int [31:0] signed int [31:0] signed int [31:0] signed realstringIData [31:0] signed logic [31:0] signed int [31:0] logic [2:0] logic [0:0]  ps_t;
+    signed int [31:0] signed int [31:0] signed int [31:0] signed int [31:0] signed int [31:0] signed int [31:0] signed int [31:0] signed realstringIData [31:0] signed logic [31:0] signed int [31:0] bit [0:0] logic [0:0]  ps_t;
     typedef struct 
-    {signed logic [2:0]  a}logicunion 
-    {logic a}
-    ???? // REFDTYPE 'ps_t'
-    bit [31:0] const 
-    ???? // REFDTYPE 'ps_t'
-    const 
-    ???? // REFDTYPE 'ps_t'
-    [0:2]
-    ???? // REFDTYPE 'us_t'
-
-    ???? // REFDTYPE 'union_t'
-    signed int [31:0] signed int [31:0] [0:2]logic [15:0] logic [15:0] logic [15:0] signed int [31:0] signed int [31:0] signed int [31:0] 
+    {signed logic [2:0]  a;}logicunion 
+    {logic a;}struct packed 
+    {signed int [31:0]  a;}bit [31:0] const struct packed 
+    {signed int [31:0]  a;}const struct packed 
+    {signed int [31:0]  a;}[0:2]struct 
+    {signed logic [2:0]  a;}union 
+    {logic a;}signed int [31:0] signed int [31:0] [0:2]logic [15:0] logic [15:0] logic [15:0] signed int [31:0] signed int [31:0] signed int [31:0] 
     ???? // QUEUEDTYPE
     signed int [31:0] string
     ???? // ASSOCARRAYDTYPE
@@ -77,19 +56,14 @@ module Vt_debug_emitv_t;
     ???? // UNSIZEDARRAYDTYPE
 
     ???? // DYNARRAYDTYPE
-    signed int [31:0] signed int [31:0] signed int [31:0] signed int [31:0] signed int [31:0] signed int [31:0] signed int [31:0] signed realstringIData [31:0] signed logic [31:0] signed int [31:0] logic [2:0] logic [0:0]  us_t;
+    signed int [31:0] signed int [31:0] signed int [31:0] signed int [31:0] signed int [31:0] signed int [31:0] signed int [31:0] signed realstringIData [31:0] signed logic [31:0] signed int [31:0] bit [0:0] logic [0:0]  us_t;
     typedef union 
-    {logic a}
-    ???? // REFDTYPE 'ps_t'
-    bit [31:0] const 
-    ???? // REFDTYPE 'ps_t'
-    const 
-    ???? // REFDTYPE 'ps_t'
-    [0:2]
-    ???? // REFDTYPE 'us_t'
-
-    ???? // REFDTYPE 'union_t'
-    signed int [31:0] signed int [31:0] [0:2]logic [15:0] logic [15:0] logic [15:0] signed int [31:0] signed int [31:0] signed int [31:0] 
+    {logic a;}struct packed 
+    {signed int [31:0]  a;}bit [31:0] const struct packed 
+    {signed int [31:0]  a;}const struct packed 
+    {signed int [31:0]  a;}[0:2]struct 
+    {signed logic [2:0]  a;}union 
+    {logic a;}signed int [31:0] signed int [31:0] [0:2]logic [15:0] logic [15:0] logic [15:0] signed int [31:0] signed int [31:0] signed int [31:0] 
     ???? // QUEUEDTYPE
     signed int [31:0] string
     ???? // ASSOCARRAYDTYPE
@@ -97,15 +71,13 @@ module Vt_debug_emitv_t;
     ???? // UNSIZEDARRAYDTYPE
 
     ???? // DYNARRAYDTYPE
-    signed int [31:0] signed int [31:0] signed int [31:0] signed int [31:0] signed int [31:0] signed int [31:0] signed int [31:0] signed realstringIData [31:0] signed logic [31:0] signed int [31:0] logic [2:0] logic [0:0]  union_t;
+    signed int [31:0] signed int [31:0] signed int [31:0] signed int [31:0] signed int [31:0] signed int [31:0] signed int [31:0] signed realstringIData [31:0] signed logic [31:0] signed int [31:0] bit [0:0] logic [0:0]  union_t;
     struct packed 
-    {
-        ???? // REFDTYPE 'e_t'
-         a} ps[0:2];
+    {signed int [31:0]  a;} ps[0:2];
     struct 
-    {signed logic [2:0]  a} us;
+    {signed logic [2:0]  a;} us;
     union 
-    {logic a} unu;
+    {logic a;} unu;
     signed int [31:0]  array[0:2];
     initial begin
         array = '{0:32'sh1, 1:32'sh2, 2:32'sh3};
@@ -148,7 +120,8 @@ module Vt_debug_emitv_t;
                             other = f(i);
                             $display("stmt %~ %~", 
                                      iother, other);
-                            t()end
+                            t();
+                        end
                         i = (i + 'h1);
                     end
                 end
@@ -163,7 +136,7 @@ module Vt_debug_emitv_t;
             $display("stmt");
         end
     end
-    always @([any] in) begin
+    always @([changed] in) begin
         begin
             $display("stmt");
         end
@@ -189,15 +162,18 @@ module Vt_debug_emitv_t;
             cyc <= (cyc + 'sh1);
             r <= (r + 0.01);
             fo = cyc;
-            sub.inc(fosum)sum = sub.f(sum);
+            sub.inc(fosum);
+            sum = sub.f(sum);
             $display("[%0t] sum = %~", $timesum, sum);
             $display("a?= %d", ($c('sh1) ? $c('sh14)
                                  : $c('sh1e)));
             $c(;);
             $display("%d", $c(0));
-            $fopen(72'h2f6465762f6e756c6c);
+            fd = $fopen(72'h2f6465762f6e756c6c);
+            ;
             $fclose(fd);
-            $fopen(72'h2f6465762f6e756c6c, 8'h72);
+            fd = $fopen(72'h2f6465762f6e756c6c, 8'h72);
+            ;
             $fgetc(fd);
             $fflush(fd);
             $fscanf(fd, "%d", sum);
@@ -361,14 +337,12 @@ module Vt_debug_emitv_sub;
     function f;
         input signed int [31:0]  v;
         begin : label0
-            begin : label0
-                if ((v == 'sh0)) begin
-                    f = 'sh21;
-                    disable label0;
-                end
-                f = ({32'h1{{31'h0, v[2]}}} + 32'h1);
+            if ((v == 'sh0)) begin
+                f = 'sh21;
                 disable label0;
             end
+            f = ({32'h1{{31'h0, v[2]}}} + 32'h1);
+            disable label0;
         end
     endfunction
     signed real r;

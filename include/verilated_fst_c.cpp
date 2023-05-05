@@ -3,7 +3,7 @@
 //
 // Code available from: https://verilator.org
 //
-// Copyright 2001-2022 by Wilson Snyder. This program is free software; you
+// Copyright 2001-2023 by Wilson Snyder. This program is free software; you
 // can redistribute it and/or modify it under the terms of either the GNU
 // Lesser General Public License Version 3 or the Perl Artistic License
 // Version 2.0.
@@ -28,10 +28,8 @@
 #include "verilated_fst_c.h"
 
 // GTKWave configuration
-#ifdef VL_TRACE_FST_WRITER_THREAD
-# define HAVE_LIBPTHREAD
-# define FST_WRITER_PARALLEL
-#endif
+#define HAVE_LIBPTHREAD
+#define FST_WRITER_PARALLEL
 
 // Include the GTKWave implementation directly
 #define FST_CONFIG_INCLUDE "fst_config.h"
@@ -92,13 +90,12 @@ static_assert(static_cast<int>(FST_ST_VCD_PROGRAM) == static_cast<int>(VLT_TRACE
 //=============================================================================
 // VerilatedFst
 
-VerilatedFst::VerilatedFst(void* fst)
-    : m_fst{fst} {}
+VerilatedFst::VerilatedFst(void* /*fst*/) {}
 
 VerilatedFst::~VerilatedFst() {
     if (m_fst) fstWriterClose(m_fst);
     if (m_symbolp) VL_DO_CLEAR(delete[] m_symbolp, m_symbolp = nullptr);
-    if (m_strbuf) VL_DO_CLEAR(delete[] m_strbuf, m_strbuf = nullptr);
+    if (m_strbufp) VL_DO_CLEAR(delete[] m_strbufp, m_strbufp = nullptr);
 }
 
 void VerilatedFst::open(const char* filename) VL_MT_SAFE_EXCLUDES(m_mutex) {
@@ -106,9 +103,7 @@ void VerilatedFst::open(const char* filename) VL_MT_SAFE_EXCLUDES(m_mutex) {
     m_fst = fstWriterCreate(filename, 1);
     fstWriterSetPackType(m_fst, FST_WR_PT_LZ4);
     fstWriterSetTimescaleFromString(m_fst, timeResStr().c_str());  // lintok-begin-on-ref
-#ifdef VL_TRACE_FST_WRITER_THREAD
-    fstWriterSetParallelMode(m_fst, 1);
-#endif
+    if (m_useFstWriterThread) fstWriterSetParallelMode(m_fst, 1);
     fullDump(true);  // First dump must be full for fst
 
     m_curScope.clear();
@@ -130,7 +125,7 @@ void VerilatedFst::open(const char* filename) VL_MT_SAFE_EXCLUDES(m_mutex) {
     m_code2symbol.clear();
 
     // Allocate string buffer for arrays
-    if (!m_strbuf) m_strbuf = new char[maxBits() + 32];
+    if (!m_strbufp) m_strbufp = new char[maxBits() + 32];
 }
 
 void VerilatedFst::close() VL_MT_SAFE_EXCLUDES(m_mutex) {
@@ -196,7 +191,7 @@ void VerilatedFst::declare(uint32_t code, const char* name, int dtypenum, fstVar
         if ((new_it->back() & 0x80)) {
             tmpModName = *new_it;
             tmpModName.pop_back();
-            // If the scope ends with a non-ascii character, it will be 0x80 + fstScopeType
+            // If the scope ends with a non-ASCII character, it will be 0x80 + fstScopeType
             fstWriterSetScope(m_fst, static_cast<fstScopeType>(new_it->back() & 0x7f),
                               tmpModName.c_str(), nullptr);
         } else {
@@ -226,6 +221,10 @@ void VerilatedFst::declare(uint32_t code, const char* name, int dtypenum, fstVar
     }
 }
 
+void VerilatedFst::declEvent(uint32_t code, const char* name, int dtypenum, fstVarDir vardir,
+                             fstVarType vartype, bool array, int arraynum) {
+    declare(code, name, dtypenum, vardir, vartype, array, arraynum, false, 0, 0);
+}
 void VerilatedFst::declBit(uint32_t code, const char* name, int dtypenum, fstVarDir vardir,
                            fstVarType vartype, bool array, int arraynum) {
     declare(code, name, dtypenum, vardir, vartype, array, arraynum, false, 0, 0);
@@ -250,23 +249,32 @@ void VerilatedFst::declDouble(uint32_t code, const char* name, int dtypenum, fst
 //=============================================================================
 // Get/commit trace buffer
 
-VerilatedFstBuffer* VerilatedFst::getTraceBuffer() { return new VerilatedFstBuffer{*this}; }
+VerilatedFst::Buffer* VerilatedFst::getTraceBuffer() {
+    if (offload()) return new OffloadBuffer{*this};
+    return new Buffer{*this};
+}
 
-void VerilatedFst::commitTraceBuffer(VerilatedFstBuffer* bufp) {
-#ifdef VL_TRACE_OFFLOAD
-    if (bufp->m_offloadBufferWritep) {
-        m_offloadBufferWritep = bufp->m_offloadBufferWritep;
-        return;  // Buffer will be deleted by the offload thread
+void VerilatedFst::commitTraceBuffer(VerilatedFst::Buffer* bufp) {
+    if (offload()) {
+        OffloadBuffer* const offloadBufferp = static_cast<OffloadBuffer*>(bufp);
+        if (offloadBufferp->m_offloadBufferWritep) {
+            m_offloadBufferWritep = offloadBufferp->m_offloadBufferWritep;
+            return;  // Buffer will be deleted by the offload thread
+        }
     }
-#endif
     delete bufp;
 }
 
 //=============================================================================
-// VerilatedFstBuffer implementation
+// Configure
 
-VerilatedFstBuffer::VerilatedFstBuffer(VerilatedFst& owner)
-    : VerilatedTraceBuffer<VerilatedFst, VerilatedFstBuffer>{owner} {}
+void VerilatedFst::configure(const VerilatedTraceConfig& config) {
+    // If at least one model requests the FST writer thread, then use it
+    m_useFstWriterThread |= config.m_useFstWriterThread;
+}
+
+//=============================================================================
+// VerilatedFstBuffer implementation
 
 //=============================================================================
 // Trace rendering primitives
@@ -274,6 +282,12 @@ VerilatedFstBuffer::VerilatedFstBuffer(VerilatedFst& owner)
 // Note: emit* are only ever called from one place (full* in
 // verilated_trace_imp.h, which is included in this file at the top),
 // so always inline them.
+
+VL_ATTR_ALWINLINE
+void VerilatedFstBuffer::emitEvent(uint32_t code, VlEvent newval) {
+    VL_DEBUG_IFDEF(assert(m_symbolp[code]););
+    fstWriterEmitValueChange(m_fst, m_symbolp[code], "1");
+}
 
 VL_ATTR_ALWINLINE
 void VerilatedFstBuffer::emitBit(uint32_t code, CData newval) {
@@ -316,7 +330,7 @@ void VerilatedFstBuffer::emitQData(uint32_t code, QData newval, int bits) {
 VL_ATTR_ALWINLINE
 void VerilatedFstBuffer::emitWData(uint32_t code, const WData* newvalp, int bits) {
     int words = VL_WORDS_I(bits);
-    char* wp = m_strbuf;
+    char* wp = m_strbufp;
     // Convert the most significant word
     const int bitsInMSW = VL_BITBIT_E(bits) ? VL_BITBIT_E(bits) : VL_EDATASIZE;
     cvtEDataToStr(wp, newvalp[--words] << (VL_EDATASIZE - bitsInMSW));
@@ -326,7 +340,7 @@ void VerilatedFstBuffer::emitWData(uint32_t code, const WData* newvalp, int bits
         cvtEDataToStr(wp, newvalp[--words]);
         wp += VL_EDATASIZE;
     }
-    fstWriterEmitValueChange(m_fst, m_symbolp[code], m_strbuf);
+    fstWriterEmitValueChange(m_fst, m_symbolp[code], m_strbufp);
 }
 
 VL_ATTR_ALWINLINE

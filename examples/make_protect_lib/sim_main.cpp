@@ -16,8 +16,8 @@
 #include <verilated_vcd_c.h>
 #endif
 
-int main(int argc, char** argv, char** env) {
-    if (false && argc && argv && env) {}
+int main(int argc, char** argv) {
+    if (false && argc && argv) {}
 
     // Construct context to hold simulation time, etc
     VerilatedContext* contextp = new VerilatedContext;
@@ -32,7 +32,7 @@ int main(int argc, char** argv, char** env) {
     // When tracing, the contents of the secret module will not be seen
     VerilatedVcdC* tfp = nullptr;
     const char* flag = contextp->commandArgsPlusMatch("trace");
-    if (flag && 0 == strcmp(flag, "+trace")) {
+    if (flag && 0 == std::strcmp(flag, "+trace")) {
         contextp->traceEverOn(true);
         VL_PRINTF("Enabling waves into logs/vlt_dump.vcd...\n");
         tfp = new VerilatedVcdC;

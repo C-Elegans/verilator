@@ -1,4 +1,4 @@
-.. Copyright 2003-2022 by Wilson Snyder.
+.. Copyright 2003-2023 by Wilson Snyder.
 .. SPDX-License-Identifier: LGPL-3.0-only OR Artistic-2.0
 
 .. _Simulation Runtime Arguments:
@@ -8,7 +8,7 @@ Simulation Runtime Arguments
 
 The following are the arguments that may be passed to a Verilated
 executable, provided that executable calls
-:code:`Verilated::commandArgs()`.
+:code:`VerilatedContext*->commandArgs(argc, argv)`.
 
 All simulation runtime arguments begin with "+verilator", so that the
 user's executable may skip over all "+verilator" arguments when parsing its
@@ -72,7 +72,7 @@ Summary:
 
 .. option:: +verilator+prof+threads+window+<value>
 
-   Deprecated. Alias for :vlopt:`+verilator+prof+exec+window+\<filename\>`
+   Deprecated. Alias for :vlopt:`+verilator+prof+exec+window+\<value\>`
 
 .. option:: +verilator+prof+vlt+file+<filename>
 
@@ -82,10 +82,10 @@ Summary:
 
 .. option:: +verilator+rand+reset+<value>
 
-   When a model was Verilated using :vlopt:`--x-initial unique
-   <--x-initial>`, sets the simulation runtime initialization technique.  0
-   = Reset to zeros. 1 = Reset to all-ones.  2 = Randomize.  See
-   :ref:`Unknown States`.
+   When a model was Verilated using
+   :vlopt:`--x-initial unique <--x-initial>`, sets the simulation runtime
+   initialization technique.  0 = Reset to zeros. 1 = Reset to all-ones.  2
+   = Randomize.  See :ref:`Unknown States`.
 
 .. option:: +verilator+seed+<value>
 
@@ -96,7 +96,7 @@ Summary:
 .. option:: +verilator+noassert
 
    Disable assert checking per runtime argument. This is the same as
-   calling :code:`Verilated::assertOn(false)` in the model.
+   calling :code:`VerilatedContext*->assertOn(false)` in the model.
 
 .. option:: +verilator+V
 

@@ -6,7 +6,7 @@
 //
 //*************************************************************************
 //
-// Copyright 2005-2022 by Wilson Snyder. This program is free software; you
+// Copyright 2005-2023 by Wilson Snyder. This program is free software; you
 // can redistribute it and/or modify it under the terms of either the GNU
 // Lesser General Public License Version 3 or the Perl Artistic License
 // Version 2.0.
@@ -75,13 +75,13 @@ class V3Statistic final {
     bool m_printit = true;  ///< Print the results
 public:
     // METHODS
-    string stage() const { return m_stage; }
-    string name() const { return m_name; }
-    double count() const { return m_count; }
-    bool sumit() const { return m_sumit; }
-    bool perf() const { return m_perf; }
-    bool printit() const { return m_printit; }
-    virtual void dump(std::ofstream& os) const;
+    string stage() const VL_MT_SAFE { return m_stage; }
+    string name() const VL_MT_SAFE { return m_name; }
+    double count() const VL_MT_SAFE { return m_count; }
+    bool sumit() const VL_MT_SAFE { return m_sumit; }
+    bool perf() const VL_MT_SAFE { return m_perf; }
+    bool printit() const VL_MT_SAFE { return m_printit; }
+    virtual void dump(std::ofstream& os) const VL_MT_SAFE;
     void combineWith(V3Statistic* otherp) {
         m_count += otherp->count();
         otherp->m_printit = false;
@@ -103,16 +103,16 @@ class V3Stats final {
 public:
     static void addStat(const V3Statistic&);
     static void addStat(const string& stage, const string& name, double count) {
-        addStat(V3Statistic(stage, name, count));
+        addStat(V3Statistic{stage, name, count});
     }
     static void addStat(const string& name, double count) {
-        addStat(V3Statistic("*", name, count));
+        addStat(V3Statistic{"*", name, count});
     }
     static void addStatSum(const string& name, double count) {
-        addStat(V3Statistic("*", name, count, true));
+        addStat(V3Statistic{"*", name, count, true});
     }
     static void addStatPerf(const string& name, double count) {
-        addStat(V3Statistic("*", name, count, true, true));
+        addStat(V3Statistic{"*", name, count, true, true});
     }
     /// Called each stage
     static void statsStage(const string& name);

@@ -1,6 +1,6 @@
 // -*- mode: C++; c-file-style: "cc-mode" -*-
 //*************************************************************************
-// DESCRIPTION: Verilator: Implementation of Christofides' algorithm to
+// DESCRIPTION: Verilator: Implementation of Christofides algorithm to
 //              approximate the solution to the traveling salesman problem.
 //
 // ISSUES: This isn't exactly Christofides algorithm; see the TODO
@@ -11,7 +11,7 @@
 //
 //*************************************************************************
 //
-// Copyright 2003-2022 by Wilson Snyder. This program is free software; you
+// Copyright 2003-2023 by Wilson Snyder. This program is free software; you
 // can redistribute it and/or modify it under the terms of either the GNU
 // Lesser General Public License Version 3 or the Perl Artistic License
 // Version 2.0.
@@ -22,11 +22,12 @@
 #include "config_build.h"
 #include "verilatedos.h"
 
-#include "V3Error.h"
-#include "V3Global.h"
-#include "V3File.h"
-#include "V3Graph.h"
 #include "V3TSP.h"
+
+#include "V3Error.h"
+#include "V3File.h"
+#include "V3Global.h"
+#include "V3Graph.h"
 
 #include <algorithm>
 #include <cmath>
@@ -34,9 +35,11 @@
 #include <memory>
 #include <sstream>
 #include <string>
-#include <unordered_set>
 #include <unordered_map>
+#include <unordered_set>
 #include <vector>
+
+VL_DEFINE_DEBUG_FUNCTIONS;
 
 //######################################################################
 // Support classes
@@ -46,12 +49,11 @@ static uint32_t edgeIdNext = 0;
 
 static void selfTestStates();
 static void selfTestString();
-
-VL_DEBUG_FUNC;  // Declare debug()
 }  // namespace V3TSP
 
 // Vertex that tracks a per-vertex key
-template <typename T_Key> class TspVertexTmpl : public V3GraphVertex {
+template <typename T_Key>
+class TspVertexTmpl final : public V3GraphVertex {
 private:
     const T_Key m_key;
 
@@ -59,7 +61,7 @@ public:
     TspVertexTmpl(V3Graph* graphp, const T_Key& k)
         : V3GraphVertex{graphp}
         , m_key{k} {}
-    virtual ~TspVertexTmpl() override = default;
+    ~TspVertexTmpl() override = default;
     const T_Key& key() const { return m_key; }
 
 private:
@@ -68,7 +70,8 @@ private:
 
 // TspGraphTmpl represents a complete graph, templatized to work with
 // different T_Key types.
-template <typename T_Key> class TspGraphTmpl : public V3Graph {
+template <typename T_Key>
+class TspGraphTmpl final : public V3Graph {
 public:
     // TYPES
     using Vertex = TspVertexTmpl<T_Key>;
@@ -81,13 +84,13 @@ public:
     // CONSTRUCTORS
     TspGraphTmpl()
         : V3Graph{} {}
-    virtual ~TspGraphTmpl() override = default;
+    ~TspGraphTmpl() override = default;
 
     // METHODS
     void addVertex(const T_Key& key) {
         const auto itr = m_vertices.find(key);
         UASSERT(itr == m_vertices.end(), "Vertex already exists with same key");
-        Vertex* v = new Vertex(this, key);
+        Vertex* v = new Vertex{this, key};
         m_vertices[key] = v;
     }
 
@@ -115,11 +118,11 @@ public:
         // which uniquely identifies a single bidir edge. Luckily we
         // can do both efficiently.
         const uint64_t userValue = (static_cast<uint64_t>(cost) << 32) | edgeId;
-        (new V3GraphEdge(this, fp, tp, cost))->user(userValue);
-        (new V3GraphEdge(this, tp, fp, cost))->user(userValue);
+        (new V3GraphEdge{this, fp, tp, cost})->user(userValue);
+        (new V3GraphEdge{this, tp, fp, cost})->user(userValue);
     }
 
-    inline static uint32_t getEdgeId(const V3GraphEdge* edgep) {
+    static uint32_t getEdgeId(const V3GraphEdge* edgep) {
         return static_cast<uint32_t>(edgep->user());
     }
 
@@ -135,7 +138,7 @@ private:
     // We will keep sorted lists of edges as vectors
     using EdgeList = std::vector<V3GraphEdge*>;
 
-    inline static bool edgeCmp(const V3GraphEdge* ap, const V3GraphEdge* bp) {
+    static bool edgeCmp(const V3GraphEdge* ap, const V3GraphEdge* bp) {
         // We pre-computed these when adding the edge to sort first by cost, then by identity
         return ap->user() > bp->user();
     }
@@ -147,7 +150,7 @@ private:
         }
     };
 
-    inline static Vertex* castVertexp(V3GraphVertex* vxp) { return static_cast<Vertex*>(vxp); }
+    static Vertex* castVertexp(V3GraphVertex* vxp) { return static_cast<Vertex*>(vxp); }
 
 public:
     // From *this, populate *mstp with the minimum spanning tree.
@@ -261,7 +264,7 @@ public:
             vtxp->user(VertexState::UNMATCHED_ODD);
         }
 
-        // TODO: The true Chrisofides algorithm calls for minimum-weight
+        // TODO: The true Christofides algorithm calls for minimum-weight
         // perfect matching. Instead, we have a simple greedy algorithm
         // which might get close to the minimum, maybe, with luck?
         //
@@ -393,7 +396,7 @@ public:
         }
     }
     void dumpGraphFilePrefixed(const string& nameComment) const {
-        if (v3Global.opt.dumpTree()) {
+        if (dumpLevel()) {
             const string filename = v3Global.debugFilename(nameComment) + ".txt";
             const std::unique_ptr<std::ofstream> logp{V3File::new_ofstream(filename)};
             if (logp->fail()) v3fatal("Can't write " << filename);
@@ -403,7 +406,7 @@ public:
 
     void findEulerTour(std::vector<T_Key>* sortedOutp) {
         UASSERT(sortedOutp->empty(), "Output graph must start empty");
-        if (debug() >= 6) dumpDotFilePrefixed("findEulerTour");
+        if (::dumpGraphLevel() >= 6) dumpDotFilePrefixed("findEulerTour");
         std::unordered_set<unsigned /*edgeID*/> markedEdges;
         // Pick a start node
         Vertex* const start_vertexp = castVertexp(verticesBeginp());
@@ -461,12 +464,12 @@ void V3TSP::tspSort(const V3TSP::StateVec& states, V3TSP::StateVec* resultp) {
     // Create the minimum spanning tree
     Graph minGraph;
     graph.makeMinSpanningTree(&minGraph);
-    if (debug() >= 6) minGraph.dumpGraphFilePrefixed("minGraph");
+    if (dumpGraphLevel() >= 6) minGraph.dumpGraphFilePrefixed("minGraph");
 
     const std::vector<const TspStateBase*> oddDegree = minGraph.getOddDegreeKeys();
     Graph matching;
     graph.perfectMatching(oddDegree, &matching);
-    if (debug() >= 6) matching.dumpGraphFilePrefixed("matching");
+    if (dumpGraphLevel() >= 6) matching.dumpGraphFilePrefixed("matching");
 
     // Adds edges to minGraph, the resulting graph will have even number of
     // edge counts at every vertex:
@@ -483,10 +486,8 @@ void V3TSP::tspSort(const V3TSP::StateVec& states, V3TSP::StateVec* resultp) {
         for (V3TSP::StateVec::iterator it = prelim_result.begin(); it != prelim_result.end();
              ++it) {
             const TspStateBase* const elemp = *it;
-            if (seen.find(elemp) == seen.end()) {
-                seen.insert(elemp);
-                resultp->push_back(elemp);
-            }
+            const auto itFoundPair = seen.insert(elemp);
+            if (itFoundPair.second) resultp->push_back(elemp);
         }
     }
 
@@ -539,8 +540,8 @@ public:
         : m_xpos{xpos}
         , m_ypos{ypos}
         , m_serial{++s_serialNext} {}
-    virtual ~TspTestState() override = default;
-    virtual int cost(const TspStateBase* otherp) const override {
+    ~TspTestState() override = default;
+    int cost(const TspStateBase* otherp) const override {
         return cost(dynamic_cast<const TspTestState*>(otherp));
     }
     static unsigned diff(unsigned a, unsigned b) {
@@ -578,11 +579,11 @@ void V3TSP::selfTestStates() {
     // Linear test -- coords all along the x-axis
     {
         V3TSP::StateVec states;
-        const TspTestState s10(10, 0);
-        const TspTestState s60(60, 0);
-        const TspTestState s20(20, 0);
-        const TspTestState s100(100, 0);
-        const TspTestState s5(5, 0);
+        const TspTestState s10{10, 0};
+        const TspTestState s60{60, 0};
+        const TspTestState s20{20, 0};
+        const TspTestState s100{100, 0};
+        const TspTestState s5{5, 0};
         states.push_back(&s10);
         states.push_back(&s60);
         states.push_back(&s20);
@@ -612,13 +613,13 @@ void V3TSP::selfTestStates() {
     // Test that tspSort() will rotate the list for minimum cost.
     {
         V3TSP::StateVec states;
-        const TspTestState a(0, 0);
-        const TspTestState b(100, 0);
-        const TspTestState c(200, 0);
-        const TspTestState d(200, 100);
-        const TspTestState e(150, 150);
-        const TspTestState f(0, 150);
-        const TspTestState g(0, 100);
+        const TspTestState a{0, 0};
+        const TspTestState b{100, 0};
+        const TspTestState c{200, 0};
+        const TspTestState d{200, 100};
+        const TspTestState e{150, 150};
+        const TspTestState f{0, 150};
+        const TspTestState g{0, 100};
 
         states.push_back(&a);
         states.push_back(&b);
@@ -669,12 +670,12 @@ void V3TSP::selfTestString() {
 
     Graph minGraph;
     graph.makeMinSpanningTree(&minGraph);
-    if (debug() >= 6) minGraph.dumpGraphFilePrefixed("minGraph");
+    if (dumpGraphLevel() >= 6) minGraph.dumpGraphFilePrefixed("minGraph");
 
     const std::vector<string> oddDegree = minGraph.getOddDegreeKeys();
     Graph matching;
     graph.perfectMatching(oddDegree, &matching);
-    if (debug() >= 6) matching.dumpGraphFilePrefixed("matching");
+    if (dumpGraphLevel() >= 6) matching.dumpGraphFilePrefixed("matching");
 
     minGraph.combineGraph(matching);
 

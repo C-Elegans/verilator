@@ -6,7 +6,7 @@
 //
 //*************************************************************************
 //
-// Copyright 2003-2022 by Wilson Snyder. This program is free software; you
+// Copyright 2003-2023 by Wilson Snyder. This program is free software; you
 // can redistribute it and/or modify it under the terms of either the GNU
 // Lesser General Public License Version 3 or the Perl Artistic License
 // Version 2.0.
@@ -17,9 +17,9 @@
 #include "config_build.h"
 #include "verilatedos.h"
 
-#include "V3Global.h"
 #include "V3EmitC.h"
 #include "V3EmitCBase.h"
+#include "V3Global.h"
 #include "V3LanguageWords.h"
 #include "V3PartitionGraph.h"
 
@@ -27,10 +27,12 @@
 #include <map>
 #include <vector>
 
+VL_DEFINE_DEBUG_FUNCTIONS;
+
 //######################################################################
 // Symbol table emitting
 
-class EmitCSyms final : EmitCBaseVisitor {
+class EmitCSyms final : EmitCBaseVisitorConst {
     // NODE STATE
     // Cleared on Netlist
     //  AstNodeModule::user1()  -> bool.  Set true __Vconfigure called
@@ -154,6 +156,22 @@ class EmitCSyms final : EmitCBaseVisitor {
         string out = scpname;
         // Remove hierarchy
         string::size_type pos = out.rfind('.');
+
+        // If there's more than one ident and an escape, find the true last ident
+        if (pos != string::npos && scpname.find('\\') != string::npos) {
+            size_t i = 0;
+            // always makes progress
+            while (i < scpname.length()) {
+                if (scpname[i] == '\\') {
+                    while (i < scpname.length() && scpname[i] != ' ') ++i;
+                    ++i;  // Proc ' ', it should always be there. Then grab '.' on next cycle
+                } else {
+                    while (i < scpname.length() && scpname[i] != '.') ++i;
+                    if (i < scpname.length()) { pos = i++; }
+                }
+            }
+        }
+
         if (pos != std::string::npos) out.erase(0, pos + 1);
         // Decode all escaped characters
         while ((pos = out.find("__0")) != string::npos) {
@@ -168,7 +186,7 @@ class EmitCSyms final : EmitCBaseVisitor {
 
     void varHierarchyScopes(string scp) {
         while (!scp.empty()) {
-            const auto scpit = m_vpiScopeCandidates.find(scp);
+            const auto scpit = m_vpiScopeCandidates.find(scopeSymString(scp));
             if ((scpit != m_vpiScopeCandidates.end())
                 && (m_scopeNames.find(scp) == m_scopeNames.end())) {
                 const auto scopeNameit = m_scopeNames.find(scpit->second.m_symName);
@@ -211,25 +229,25 @@ class EmitCSyms final : EmitCBaseVisitor {
                     const string::size_type dpos = whole.rfind("__DOT__");
                     if (dpos != string::npos) {
                         scpName = whole.substr(0, dpos);
-                        varBase = whole.substr(dpos + strlen("__DOT__"));
+                        varBase = whole.substr(dpos + std::strlen("__DOT__"));
                     } else {
                         varBase = whole;
                     }
                     // UINFO(9, "For " << scopep->name() << " - " << varp->name() << "  Scp "
                     // << scpName << "Var " << varBase << endl);
-                    const string varBasePretty = AstNode::prettyName(varBase);
-                    const string scpPretty = AstNode::prettyName(scpName);
-                    const string scpSym = scopeSymString(scpName);
+                    const string varBasePretty = AstNode::prettyName(VName::dehash(varBase));
+                    const string scpPretty = AstNode::prettyName(VName::dehash(scpName));
+                    const string scpSym = scopeSymString(VName::dehash(scpName));
                     // UINFO(9, " scnameins sp " << scpName << " sp " << scpPretty << " ss "
                     // << scpSym << endl);
                     if (v3Global.opt.vpi()) varHierarchyScopes(scpName);
                     if (m_scopeNames.find(scpSym) == m_scopeNames.end()) {
                         m_scopeNames.insert(std::make_pair(
-                            scpSym, ScopeData(scpSym, scpPretty, 0, "SCOPE_OTHER")));
+                            scpSym, ScopeData{scpSym, scpPretty, 0, "SCOPE_OTHER"}));
                     }
                     m_scopeVars.insert(
                         std::make_pair(scpSym + " " + varp->name(),
-                                       ScopeVarData(scpSym, varBasePretty, varp, modp, scopep)));
+                                       ScopeVarData{scpSym, varBasePretty, varp, modp, scopep}));
                 }
             }
         }
@@ -258,9 +276,9 @@ class EmitCSyms final : EmitCBaseVisitor {
     }
 
     // VISITORS
-    virtual void visit(AstNetlist* nodep) override {
+    void visit(AstNetlist* nodep) override {
         // Collect list of scopes
-        iterateChildren(nodep);
+        iterateChildrenConst(nodep);
         varsExpand();
 
         if (v3Global.opt.vpi()) buildVpiHierarchy();
@@ -280,27 +298,28 @@ class EmitCSyms final : EmitCBaseVisitor {
             if (!m_dpiHdrOnly) emitDpiImp();
         }
     }
-    virtual void visit(AstConstPool* nodep) override {}  // Ignore
-    virtual void visit(AstNodeModule* nodep) override {
+    void visit(AstConstPool* nodep) override {}  // Ignore
+    void visit(AstNodeModule* nodep) override {
         nameCheck(nodep);
         VL_RESTORER(m_modp);
         {
             m_modp = nodep;
-            iterateChildren(nodep);
+            iterateChildrenConst(nodep);
         }
     }
-    virtual void visit(AstCellInline* nodep) override {
+    void visit(AstCellInline* nodep) override {
         if (v3Global.opt.vpi()) {
             const string type
                 = (nodep->origModName() == "__BEGIN__") ? "SCOPE_OTHER" : "SCOPE_MODULE";
-            const string name = nodep->scopep()->name() + "__DOT__" + nodep->name();
-            const string name_dedot = AstNode::dedotName(name);
+            const string name = nodep->scopep()->shortName() + "__DOT__" + nodep->name();
+            const string name_pretty = AstNode::vpiName(name);
             const int timeunit = m_modp->timeunit().powerOfTen();
             m_vpiScopeCandidates.insert(
-                std::make_pair(name, ScopeData(scopeSymString(name), name_dedot, timeunit, type)));
+                std::make_pair(scopeSymString(name),
+                               ScopeData{scopeSymString(name), name_pretty, timeunit, type}));
         }
     }
-    virtual void visit(AstScope* nodep) override {
+    void visit(AstScope* nodep) override {
         if (VN_IS(m_modp, Class)) return;  // The ClassPackage is what is visible
         nameCheck(nodep);
 
@@ -308,22 +327,20 @@ class EmitCSyms final : EmitCBaseVisitor {
 
         if (v3Global.opt.vpi() && !nodep->isTop()) {
             const string type = VN_IS(nodep->modp(), Package) ? "SCOPE_OTHER" : "SCOPE_MODULE";
-            const string name_dedot = AstNode::dedotName(nodep->shortName());
+            const string name_pretty = AstNode::vpiName(nodep->shortName());
             const int timeunit = m_modp->timeunit().powerOfTen();
-            m_vpiScopeCandidates.insert(
-                std::make_pair(nodep->name(), ScopeData(scopeSymString(nodep->name()), name_dedot,
-                                                        timeunit, type)));
+            m_vpiScopeCandidates.insert(std::make_pair(
+                scopeSymString(nodep->name()),
+                ScopeData{scopeSymString(nodep->name()), name_pretty, timeunit, type}));
         }
     }
-    virtual void visit(AstScopeName* nodep) override {
+    void visit(AstScopeName* nodep) override {
         const string name = nodep->scopeSymName();
-        // UINFO(9,"scnameins sp "<<nodep->name()<<" sp "<<nodep->scopePrettySymName()
-        // <<" ss"<<name<<endl);
+        // UINFO(9, "scnameins sp " << nodep->name() << " sp " << nodep->scopePrettySymName()
+        // << " ss" << name << endl);
         const int timeunit = m_modp ? m_modp->timeunit().powerOfTen() : 0;
-        if (m_scopeNames.find(name) == m_scopeNames.end()) {
-            m_scopeNames.emplace(
-                name, ScopeData(name, nodep->scopePrettySymName(), timeunit, "SCOPE_OTHER"));
-        }
+        m_scopeNames.emplace(
+            name, ScopeData{name, nodep->scopePrettySymName(), timeunit, "SCOPE_OTHER"});
         if (nodep->dpiExport()) {
             UASSERT_OBJ(m_cfuncp, nodep, "ScopeName not under DPI function");
             m_scopeFuncs.insert(std::make_pair(name + " " + m_cfuncp->name(),
@@ -332,41 +349,41 @@ class EmitCSyms final : EmitCBaseVisitor {
             if (m_scopeNames.find(nodep->scopeDpiName()) == m_scopeNames.end()) {
                 m_scopeNames.insert(
                     std::make_pair(nodep->scopeDpiName(),
-                                   ScopeData(nodep->scopeDpiName(), nodep->scopePrettyDpiName(),
-                                             timeunit, "SCOPE_OTHER")));
+                                   ScopeData{nodep->scopeDpiName(), nodep->scopePrettyDpiName(),
+                                             timeunit, "SCOPE_OTHER"}));
             }
         }
     }
-    virtual void visit(AstVar* nodep) override {
+    void visit(AstVar* nodep) override {
         nameCheck(nodep);
-        iterateChildren(nodep);
+        iterateChildrenConst(nodep);
         if (nodep->isSigUserRdPublic() && !m_cfuncp)
             m_modVars.emplace_back(std::make_pair(m_modp, nodep));
     }
-    virtual void visit(AstCoverDecl* nodep) override {
+    void visit(AstCoverDecl* nodep) override {
         // Assign numbers to all bins, so we know how big of an array to use
         if (!nodep->dataDeclNullp()) {  // else duplicate we don't need code for
             nodep->binNum(m_coverBins++);
         }
     }
-    virtual void visit(AstCFunc* nodep) override {
+    void visit(AstCFunc* nodep) override {
         nameCheck(nodep);
         if (nodep->dpiImportPrototype() || nodep->dpiExportDispatcher()) m_dpis.push_back(nodep);
         VL_RESTORER(m_cfuncp);
         {
             m_cfuncp = nodep;
-            iterateChildren(nodep);
+            iterateChildrenConst(nodep);
         }
     }
 
     //---------------------------------------
-    virtual void visit(AstConst*) override {}
-    virtual void visit(AstNode* nodep) override { iterateChildren(nodep); }
+    void visit(AstConst*) override {}
+    void visit(AstNode* nodep) override { iterateChildrenConst(nodep); }
 
 public:
     explicit EmitCSyms(AstNetlist* nodep, bool dpiHdrOnly)
         : m_dpiHdrOnly{dpiHdrOnly} {
-        iterate(nodep);
+        iterateConst(nodep);
     }
 };
 
@@ -376,9 +393,9 @@ void EmitCSyms::emitSymHdr() {
     newCFile(filename, true /*slow*/, false /*source*/);
 
     if (v3Global.opt.systemC()) {
-        m_ofp = new V3OutScFile(filename);
+        m_ofp = new V3OutScFile{filename};
     } else {
-        m_ofp = new V3OutCFile(filename);
+        m_ofp = new V3OutCFile{filename};
     }
 
     ofp()->putsHeader();
@@ -415,14 +432,16 @@ void EmitCSyms::emitSymHdr() {
             if (funcp->dpiExportImpl()) {
                 const string cbtype
                     = protect(v3Global.opt.prefix() + "__Vcb_" + funcp->cname() + "_t");
-                types["using " + cbtype + " = void (*) (" + cFuncArgs(funcp) + ");\n"] = 1;
+                const string functype = funcp->rtnTypeVoid() + " (*) (" + cFuncArgs(funcp) + ")";
+                types["using " + cbtype + " = " + functype + ";\n"] = 1;
             }
         }
         for (const auto& i : types) puts(i.first);
     }
 
     puts("\n// SYMS CLASS (contains all model state)\n");
-    puts("class " + symClassName() + " final : public VerilatedSyms {\n");
+    puts("class alignas(VL_CACHE_LINE_BYTES)" + symClassName()
+         + " final : public VerilatedSyms {\n");
     ofp()->putsPrivate(false);  // public:
 
     puts("// INTERNAL STATE\n");
@@ -443,17 +462,21 @@ void EmitCSyms::emitSymHdr() {
         puts("uint32_t __Vm_baseCode = 0;"
              "  ///< Used by trace routines when tracing multiple models\n");
     }
+    if (v3Global.hasEvents()) puts("std::vector<VlEvent*> __Vm_triggeredEvents;\n");
+    if (v3Global.hasClasses()) puts("VlDeleter __Vm_deleter;\n");
     puts("bool __Vm_didInit = false;\n");
-
-    if (v3Global.opt.profExec()) {
-        puts("\n// EXECUTION PROFILING\n");
-        puts("VlExecutionProfiler __Vm_executionProfiler;\n");
-    }
 
     if (v3Global.opt.mtasks()) {
         puts("\n// MULTI-THREADING\n");
         puts("VlThreadPool* const __Vm_threadPoolp;\n");
-        puts("bool __Vm_even_cycle = false;\n");
+        puts("bool __Vm_even_cycle__ico = false;\n");
+        puts("bool __Vm_even_cycle__act = false;\n");
+        puts("bool __Vm_even_cycle__nba = false;\n");
+    }
+
+    if (v3Global.opt.profExec()) {
+        puts("\n// EXECUTION PROFILING\n");
+        puts("VlExecutionProfiler* const __Vm_executionProfilerp;\n");
     }
 
     puts("\n// MODULE INSTANCE STATE\n");
@@ -495,7 +518,7 @@ void EmitCSyms::emitSymHdr() {
     puts("\n// CONSTRUCTORS\n");
     puts(symClassName() + "(VerilatedContext* contextp, const char* namep, " + topClassName()
          + "* modelp);\n");
-    puts(string("~") + symClassName() + "();\n");
+    puts(string{"~"} + symClassName() + "();\n");
 
     for (const auto& i : m_usesVfinal) {
         puts("void " + symClassName() + "_" + cvtToStr(i.first) + "(");
@@ -505,6 +528,22 @@ void EmitCSyms::emitSymHdr() {
 
     puts("\n// METHODS\n");
     puts("const char* name() { return TOP.name(); }\n");
+
+    if (v3Global.hasEvents()) {
+        puts("void enqueueTriggeredEventForClearing(VlEvent& event) {\n");
+        puts("#ifdef VL_DEBUG\n");
+        puts("if (VL_UNLIKELY(!event.isTriggered())) {\n");
+        puts("VL_FATAL_MT(__FILE__, __LINE__, __FILE__, \"event passed to "
+             "'enqueueTriggeredEventForClearing' was not triggered\");\n");
+        puts("}\n");
+        puts("#endif\n");
+        puts("__Vm_triggeredEvents.push_back(&event);\n");
+        puts("}\n");
+        puts("void clearTriggeredEvents() {\n");
+        puts("for (const auto eventp : __Vm_triggeredEvents) eventp->clearTriggered();\n");
+        puts("__Vm_triggeredEvents.clear();\n");
+        puts("}\n");
+    }
 
     if (v3Global.needTraceDumper()) {
         if (!optSystemC()) puts("void _traceDump();\n");
@@ -516,7 +555,7 @@ void EmitCSyms::emitSymHdr() {
         puts("void " + protect("__Vserialize") + "(VerilatedSerialize& os);\n");
         puts("void " + protect("__Vdeserialize") + "(VerilatedDeserialize& os);\n");
     }
-    puts("} VL_ATTR_ALIGNED(VL_CACHE_LINE_BYTES);\n");
+    puts("};\n");
 
     ofp()->putsEndGuard();
     VL_DO_CLEAR(delete m_ofp, m_ofp = nullptr);
@@ -547,9 +586,9 @@ void EmitCSyms::checkSplit(bool usesVfinal) {
     closeSplit();
 
     if (v3Global.opt.systemC()) {
-        m_ofp = new V3OutScFile(filename);
+        m_ofp = new V3OutScFile{filename};
     } else {
-        m_ofp = new V3OutCFile(filename);
+        m_ofp = new V3OutCFile{filename};
     }
 
     m_ofpBase->puts(symClassName() + "_" + cvtToStr(m_funcNum) + "(");
@@ -628,9 +667,9 @@ void EmitCSyms::emitSymImp() {
     cfilep->support(true);
 
     if (v3Global.opt.systemC()) {
-        m_ofp = new V3OutScFile(filename);
+        m_ofp = new V3OutScFile{filename};
     } else {
-        m_ofp = new V3OutCFile(filename);
+        m_ofp = new V3OutCFile{filename};
     }
 
     m_ofpBase = m_ofp;
@@ -673,8 +712,35 @@ void EmitCSyms::emitSymImp() {
         puts("_vm_pgoProfiler.write(\"" + topClassName()
              + "\", _vm_contextp__->profVltFilename());\n");
     }
-    if (v3Global.opt.mtasks()) puts("delete __Vm_threadPoolp;\n");
-    puts("}\n\n");
+    puts("}\n");
+
+    if (v3Global.needTraceDumper()) {
+        if (!optSystemC()) {
+            puts("\nvoid " + symClassName() + "::_traceDump() {\n");
+            // Caller checked for __Vm_dumperp non-nullptr
+            puts("const VerilatedLockGuard lock(__Vm_dumperMutex);\n");
+            puts("__Vm_dumperp->dump(VL_TIME_Q());\n");
+            puts("}\n");
+        }
+
+        puts("\nvoid " + symClassName() + "::_traceDumpOpen() {\n");
+        puts("const VerilatedLockGuard lock(__Vm_dumperMutex);\n");
+        puts("if (VL_UNLIKELY(!__Vm_dumperp)) {\n");
+        puts("__Vm_dumperp = new " + v3Global.opt.traceClassLang() + "();\n");
+        puts("__Vm_modelp->trace(__Vm_dumperp, 0, 0);\n");
+        puts("std::string dumpfile = _vm_contextp__->dumpfileCheck();\n");
+        puts("__Vm_dumperp->open(dumpfile.c_str());\n");
+        puts("__Vm_dumping = true;\n");
+        puts("}\n");
+        puts("}\n");
+
+        puts("\nvoid " + symClassName() + "::_traceDumpClose() {\n");
+        puts("const VerilatedLockGuard lock(__Vm_dumperMutex);\n");
+        puts("__Vm_dumping = false;\n");
+        puts("VL_DO_CLEAR(delete __Vm_dumperp, __Vm_dumperp = nullptr);\n");
+        puts("}\n");
+    }
+    puts("\n");
 
     // Constructor
     puts(symClassName() + "::" + symClassName()
@@ -705,12 +771,13 @@ void EmitCSyms::emitSymImp() {
         // Note we create N-1 threads in the thread pool. The thread
         // that calls eval() becomes the final Nth thread for the
         // duration of the eval call.
-        puts("    , __Vm_threadPoolp{new VlThreadPool{_vm_contextp__, "
-             + cvtToStr(v3Global.opt.threads() - 1) + ", "
-             + (v3Global.opt.profExec()
-                    ? "&__Vm_executionProfiler, &VlExecutionProfiler::startWorkerSetup"
-                    : "nullptr, nullptr")
-             + "}}\n");
+        puts("    , __Vm_threadPoolp{static_cast<VlThreadPool*>(contextp->threadPoolp())}\n");
+    }
+
+    if (v3Global.opt.profExec()) {
+        puts("    , "
+             "__Vm_executionProfilerp{static_cast<VlExecutionProfiler*>(contextp->"
+             "enableExecutionProfiler(&VlExecutionProfiler::construct))}\n");
     }
 
     puts("    // Setup module instances\n");
@@ -736,15 +803,14 @@ void EmitCSyms::emitSymImp() {
     if (v3Global.opt.profPgo()) {
         puts("// Configure profiling for PGO\n");
         if (v3Global.opt.mtasks()) {
-            v3Global.rootp()->topModulep()->foreach<AstExecGraph>(
-                [&](const AstExecGraph* execGraphp) {
-                    for (const V3GraphVertex* vxp = execGraphp->depGraphp()->verticesBeginp(); vxp;
-                         vxp = vxp->verticesNextp()) {
-                        const ExecMTask* const mtp = static_cast<const ExecMTask*>(vxp);
-                        puts("_vm_pgoProfiler.addCounter(" + cvtToStr(mtp->profilerId()) + ", \""
-                             + mtp->hashName() + "\");\n");
-                    }
-                });
+            v3Global.rootp()->topModulep()->foreach([&](const AstExecGraph* execGraphp) {
+                for (const V3GraphVertex* vxp = execGraphp->depGraphp()->verticesBeginp(); vxp;
+                     vxp = vxp->verticesNextp()) {
+                    const ExecMTask* const mtp = static_cast<const ExecMTask*>(vxp);
+                    puts("_vm_pgoProfiler.addCounter(" + cvtToStr(mtp->profilerId()) + ", \""
+                         + mtp->hashName() + "\");\n");
+                }
+            });
         }
     }
 
@@ -774,7 +840,7 @@ void EmitCSyms::emitSymImp() {
                 puts(protectIf(aboveScopep->nameDotless(), aboveScopep->protect()));
             }
             puts(".");
-            puts(protName.substr(protName.rfind(".") + 1));
+            puts(protName.substr(protName.rfind('.') + 1));
             puts(" = &");
             puts(protectIf(scopep->nameDotless(), scopep->protect()) + ";\n");
             ++m_numStmts;
@@ -816,7 +882,7 @@ void EmitCSyms::emitSymImp() {
 
     if (v3Global.dpi()) {
         m_ofpBase->puts("// Setup export functions\n");
-        m_ofpBase->puts("for (int __Vfinal=0; __Vfinal<2; __Vfinal++) {\n");
+        m_ofpBase->puts("for (int __Vfinal = 0; __Vfinal < 2; ++__Vfinal) {\n");
         for (auto it = m_scopeFuncs.begin(); it != m_scopeFuncs.end(); ++it) {
             AstScopeName* const scopep = it->second.m_scopep;
             AstCFunc* const funcp = it->second.m_cfuncp;
@@ -923,33 +989,6 @@ void EmitCSyms::emitSymImp() {
 
     m_ofpBase->puts("}\n");
 
-    if (v3Global.needTraceDumper()) {
-        if (!optSystemC()) {
-            puts("\nvoid " + symClassName() + "::_traceDump() {\n");
-            // Caller checked for __Vm_dumperp non-nullptr
-            puts("const VerilatedLockGuard lock(__Vm_dumperMutex);\n");
-            puts("__Vm_dumperp->dump(VL_TIME_Q());\n");
-            puts("}\n");
-        }
-
-        puts("\nvoid " + symClassName() + "::_traceDumpOpen() {\n");
-        puts("const VerilatedLockGuard lock(__Vm_dumperMutex);\n");
-        puts("if (VL_UNLIKELY(!__Vm_dumperp)) {\n");
-        puts("__Vm_dumperp = new " + v3Global.opt.traceClassLang() + "();\n");
-        puts("__Vm_modelp->trace(__Vm_dumperp, 0, 0);\n");
-        puts("std::string dumpfile = _vm_contextp__->dumpfileCheck();\n");
-        puts("__Vm_dumperp->open(dumpfile.c_str());\n");
-        puts("__Vm_dumping = true;\n");
-        puts("}\n");
-        puts("}\n");
-
-        puts("\nvoid " + symClassName() + "::_traceDumpClose() {\n");
-        puts("const VerilatedLockGuard lock(__Vm_dumperMutex);\n");
-        puts("__Vm_dumping = false;\n");
-        puts("VL_DO_CLEAR(delete __Vm_dumperp, __Vm_dumperp = nullptr);\n");
-        puts("}\n");
-    }
-
     closeSplit();
     m_ofp = nullptr;
     VL_DO_CLEAR(delete m_ofpBase, m_ofpBase = nullptr);
@@ -962,7 +1001,7 @@ void EmitCSyms::emitDpiHdr() {
     const string filename = v3Global.opt.makeDir() + "/" + topClassName() + "__Dpi.h";
     AstCFile* const cfilep = newCFile(filename, false /*slow*/, false /*source*/);
     cfilep->support(true);
-    V3OutCFile hf(filename);
+    V3OutCFile hf{filename};
     m_ofp = &hf;
 
     m_ofp->putsHeader();
@@ -1007,6 +1046,7 @@ void EmitCSyms::emitDpiHdr() {
     puts("#endif\n");
 
     ofp()->putsEndGuard();
+    m_ofp = nullptr;
 }
 
 //######################################################################
@@ -1061,6 +1101,7 @@ void EmitCSyms::emitDpiImp() {
             puts("\n");
         }
     }
+    m_ofp = nullptr;
 }
 
 //######################################################################

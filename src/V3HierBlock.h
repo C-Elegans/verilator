@@ -6,15 +6,11 @@
 //
 //*************************************************************************
 //
-// Copyright 2003-2022 by Wilson Snyder.  This program is free software; you can
-// redistribute it and/or modify it under the terms of either the GNU
+// Copyright 2003-2023 by Wilson Snyder. This program is free software; you
+// can redistribute it and/or modify it under the terms of either the GNU
 // Lesser General Public License Version 3 or the Perl Artistic License
 // Version 2.0.
-//
-// Verilator is distributed in the hope that it will be useful,
-// but WITHOUT ANY WARRANTY; without even the implied warranty of
-// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-// GNU General Public License for more details.
+// SPDX-License-Identifier: LGPL-3.0-only OR Artistic-2.0
 //
 //*************************************************************************
 
@@ -28,9 +24,9 @@
 #include <map>
 #include <set>
 #include <string>
-#include <utility>
 #include <unordered_map>
 #include <unordered_set>
+#include <utility>
 #include <vector>
 
 class AstNetlist;
@@ -67,7 +63,6 @@ public:
         : m_modp{modp}
         , m_gparams{gparams} {}
     ~V3HierBlock();
-    VL_DEBUG_FUNC;  // Declare debug()
 
     void addParent(V3HierBlock* parentp) { m_parents.insert(parentp); }
     void addChild(V3HierBlock* childp) { m_children.insert(childp); }
@@ -88,14 +83,14 @@ public:
     string hierGenerated(bool withDir) const;
     // Returns the original HDL file if it is not included in v3Global.opt.vFiles().
     string vFileIfNecessary() const;
-    // Write command line argumuents to .f file for this hierarchical block
+    // Write command line arguments to .f file for this hierarchical block
     void writeCommandArgsFile(bool forCMake) const;
     string commandArgsFileName(bool forCMake) const;
 };
 
 //######################################################################
 
-// Holds relashonship between AstNodeModule and V3HierBlock
+// Holds relationship between AstNodeModule and V3HierBlock
 class V3HierBlockPlan final {
     using HierMap = std::unordered_map<const AstNodeModule*, V3HierBlock*>;
     HierMap m_blocks;
@@ -107,9 +102,7 @@ public:
     using iterator = HierMap::iterator;
     using const_iterator = HierMap::const_iterator;
     using HierVector = std::vector<const V3HierBlock*>;
-    VL_DEBUG_FUNC;  // Declare debug()
 
-    bool isHierBlock(const AstNodeModule* modp) const;
     void add(const AstNodeModule* modp, const std::vector<AstVar*>& gparams);
     void registerUsage(const AstNodeModule* parentp, const AstNodeModule* childp);
 

@@ -1,7 +1,7 @@
 // -*- mode: C++; c-file-style: "cc-mode" -*-
 //*************************************************************************
 //
-// Copyright 2013-2022 by Wilson Snyder. This program is free software; you can
+// Copyright 2013-2023 by Wilson Snyder. This program is free software; you can
 // redistribute it and/or modify it under the terms of either the GNU
 // Lesser General Public License Version 3 or the Perl Artistic License
 // Version 2.0.
@@ -34,7 +34,7 @@ static const bool verbose = false;
 
 #define TEST_CHECK_EQ(got, exp) TEST_CHECK(got, exp, ((got) == (exp)));
 #define TEST_CHECK_NE(got, exp) TEST_CHECK(got, exp, ((got) != (exp)));
-#define TEST_CHECK_CSTR(got, exp) TEST_CHECK(got, exp, 0 == strcmp((got), (exp)));
+#define TEST_CHECK_CSTR(got, exp) TEST_CHECK(got, exp, 0 == std::strcmp((got), (exp)));
 
 #define TEST_CHECK_HEX_EQ(got, exp) \
     do { \

@@ -1,4 +1,4 @@
-.. Copyright 2003-2022 by Wilson Snyder.
+.. Copyright 2003-2023 by Wilson Snyder.
 .. SPDX-License-Identifier: LGPL-3.0-only OR Artistic-2.0
 
 .. _Connecting:
@@ -51,8 +51,8 @@ also the instance of the top level instance in the design hierarchy (what
 you would refer to with :code:`$root` in SystemVerilog).  This meant that
 all internal variables that were implemented by Verilator in the root scope
 were accessible as members of the model class itself.  Note there were often
-many such variable due to module inlining, including :code:`/* verilator
-public_flat */` items.
+many such variable due to module inlining, including
+:code:`/* verilator public_flat */` items.
 
 This means that user code that accesses internal signals in the model
 (likely including :code:`/* verilator public_flat */` signals, as they are
@@ -86,61 +86,20 @@ Connecting to C++
 In C++ output mode (:vlopt:`--cc`), the Verilator generated model class is a
 simple C++ class.  The user must write a C++ wrapper and main loop for the
 simulation, which instantiates the model class, and link with the Verilated
-model.  Here is a simple example:
+model.
 
-.. code-block:: C++
+Refer to ``examples/make_tracing_c`` in the distribution for a detailed
+commented example.
 
-         #include <verilated.h>          // Defines common routines
-         #include <iostream>             // Need std::cout
-         #include "Vtop.h"               // From Verilating "top.v"
+Top level IO signals are read and written as members of the model.  You
+call the model's :code:`eval()` method to evaluate the model.  When the
+simulation is complete call the model's :code:`final()` method to execute
+any SystemVerilog final blocks, and complete any assertions. If using
+:vlopt:`--timing`, there are two additional functions for checking if
+there are any events pending in the simulation due to delays, and for
+retrieving the simulation time of the next delayed event. See
+:ref:`Evaluation Loop`.
 
-         Vtop *top;                      // Instantiation of model
-
-         uint64_t main_time = 0;       // Current simulation time
-         // This is a 64-bit integer to reduce wrap over issues and
-         // allow modulus.  This is in units of the timeprecision
-         // used in Verilog (or from --timescale-override)
-
-         double sc_time_stamp() {        // Called by $time in Verilog
-             return main_time;           // converts to double, to match
-                                         // what SystemC does
-         }
-
-         int main(int argc, char** argv) {
-             Verilated::commandArgs(argc, argv);   // Remember args
-
-             top = new Vtop;             // Create model
-             // Do not instead make Vtop as a file-scope static
-             // variable, as the "C++ static initialization order fiasco"
-             // may cause a crash
-
-             top->reset_l = 0;           // Set some inputs
-
-             while (!Verilated::gotFinish()) {
-                 if (main_time > 10) {
-                     top->reset_l = 1;   // Deassert reset
-                 }
-                 if ((main_time % 10) == 1) {
-                     top->clk = 1;       // Toggle clock
-                 }
-                 if ((main_time % 10) == 6) {
-                     top->clk = 0;
-                 }
-                 top->eval();            // Evaluate model
-                 cout << top->out << endl;       // Read a output
-                 main_time++;            // Time passes...
-             }
-
-             top->final();               // Done simulating
-             //    // (Though this example doesn't get here)
-             delete top;
-         }
-
-
-Note top level IO signals are read and written as members of the model.  You
-call the :code:`eval()` method to evaluate the model.  When the simulation is
-complete call the :code:`final()` method to execute any SystemVerilog final
-blocks, and complete any assertions. See :ref:`Evaluation Loop`.
 
 
 Connecting to SystemC
@@ -159,6 +118,15 @@ become sc_bv's.  (Uints simulate the fastest so are used where possible.)
 Model internals, including lower level sub-modules are not pure SystemC
 code.  This is a feature, as using the SystemC pin interconnect scheme
 everywhere would reduce performance by an order of magnitude.
+
+
+Verilated API
+=============
+
+The API to a Verilated model is the C++ headers in the include/ directory
+in the distribution.  These headers use Doxygen comments, `///` and `//<`,
+to indicate and document those functions that are part of the Verilated
+public API.
 
 
 Direct Programming Interface (DPI)
@@ -415,9 +383,11 @@ changed on the specified clock edge.
 .. code-block:: bash
 
      cat >our.v <<'EOF'
-       module our (input clk);
-          reg readme   /*verilator public_flat_rd*/;
-          reg writeme  /*verilator public_flat_rw @(posedge clk) */;
+       module our #(
+          parameter WIDTH /*verilator public_flat_rd*/ = 32
+       ) (input clk);
+          reg [WIDTH-1:0] readme   /*verilator public_flat_rd*/;
+          reg [WIDTH-1:0] writeme  /*verilator public_flat_rw @(posedge clk) */;
           initial $finish;
        endmodule
      EOF
@@ -439,24 +409,27 @@ accesses the above signal "readme" would be:
            vpiHandle vh1 = vpi_handle_by_name((PLI_BYTE8*)"TOP.our.readme", NULL);
            if (!vh1) vl_fatal(__FILE__, __LINE__, "sim_main", "No handle found");
            const char* name = vpi_get_str(vpiName, vh1);
-           printf("Module name: %s\n", name);  // Prints "readme"
+           const char* type = vpi_get_str(vpiType, vh1);
+           const int size = vpi_get(vpiSize, vh1);
+           printf("register name: %s, type: %s, size: %d\n", name, type, size);  // Prints "register name: readme, type: vpiReg, size: 32"
 
            s_vpi_value v;
            v.format = vpiIntVal;
            vpi_get_value(vh1, &v);
-           printf("Value of v: %d\n", v.value.integer);  // Prints "readme"
+           printf("Value of %s: %d\n", name, v.value.integer);  // Prints "Value of readme: 0"
        }
 
-       int main(int argc, char** argv, char** env) {
+       int main(int argc, char** argv) {
            Verilated::commandArgs(argc, argv);
-           Vour* top = new Vour;
-           Verilated::internalsDump();  // See scopes to help debug
-           while (!Verilated::gotFinish()) {
+           const std::unique_ptr<VerilatedContext> contextp{new VerilatedContext};
+           const std::unique_ptr<Vour> top{new Vour{contextp.get()}};
+
+           contextp->internalsDump();  // See scopes to help debug
+           while (!contextp->gotFinish()) {
                top->eval();
                VerilatedVpi::callValueCbs();  // For signal callbacks
                read_and_check();
            }
-           delete top;
            return 0;
        }
      EOF
@@ -483,10 +456,25 @@ there is only a single design, you would call :code:`eval_step()` then
 :code:`eval_end_step()`; in fact :code:`eval()` described above is just a
 wrapper which calls these two functions.
 
+3. If using delays and :vlopt:`--timing`, there are two additional methods
+the user should call:
+
+   * :code:`designp->eventsPending()`, which returns :code:`true` if there are
+     any delayed events pending,
+   * :code:`designp->nextTimeSlot()`, which returns the simulation time of the
+     next delayed event. This method can only be called if
+     :code:`designp->nextTimeSlot()` returned :code:`true`.
+
+Call :code:`eventsPending()` to check if you should continue with the
+simulation, and then :code:`nextTimeSlot()` to move simulation time forward.
+:vlopt:`--main` can be used with :vlopt:`--timing` to generate a basic example
+of a timing-enabled eval loop.
+
 When :code:`eval()` (or :code:`eval_step()`) is called Verilator looks for
 changes in clock signals and evaluates related sequential always blocks,
-such as computing always_ff @ (posedge...) outputs.  Then Verilator
-evaluates combinatorial logic.
+such as computing always_ff @ (posedge...) outputs. With :vlopt:`--timing`, it
+resumes any delayed processes awaiting the current simulation time. Then
+Verilator evaluates combinational logic.
 
 Note combinatorial logic is not computed before sequential always blocks
 are computed (for speed reasons). Therefore it is best to set any non-clock
@@ -504,11 +492,12 @@ distribution.
 Verilated and VerilatedContext
 ==============================
 
-Multiple Verilated models may be part of the same simulation context, that
-is share a VPI interface, sense of time, and common settings.  This common
-simulation context information is stored in a ``VerilatedContext``
+Multiple C++ Verilated models may be part of the same simulation context,
+that is share a VPI interface, sense of time, and common settings.  This
+common simulation context information is stored in a ``VerilatedContext``
 structure.  If a ``VerilatedContext`` is not created prior to creating a
-model, a default global one is created automatically.
+model, a default global one is created automatically.  SystemC requires
+using only the single, default VerilatedContext.
 
 The ``Verilated::`` methods, including the ``Verilated::commandArgs`` call
 shown above, call VerilatedContext methods using the default global

@@ -10,7 +10,8 @@
 #
 ######################################################################
 
-cmake_minimum_required (VERSION 3.8)
+cmake_minimum_required(VERSION 3.12)
+cmake_policy(SET CMP0074 NEW)
 project (t_hier_block_cmake)
 
 find_package(verilator REQUIRED)
@@ -24,4 +25,3 @@ set(VERILATOR_OPTIONS "${VERILATOR_OPTIONS}" --hierarchical --stats --CFLAGS "-p
 
 verilate(t_hier_block_cmake VERILATOR_ARGS ${VERILATOR_OPTIONS} SOURCES
     ../t_hier_block.v )
-

@@ -6,7 +6,7 @@
 //
 //*************************************************************************
 //
-// Copyright 2003-2022 by Wilson Snyder. This program is free software; you
+// Copyright 2003-2023 by Wilson Snyder. This program is free software; you
 // can redistribute it and/or modify it under the terms of either the GNU
 // Lesser General Public License Version 3 or the Perl Artistic License
 // Version 2.0.
@@ -17,36 +17,46 @@
 #include "config_build.h"
 #include "verilatedos.h"
 
-#include "V3Global.h"
 #include "V3EmitC.h"
 #include "V3EmitCBase.h"
+#include "V3Global.h"
 #include "V3Stats.h"
 
 #include <map>
 
+VL_DEFINE_DEBUG_FUNCTIONS;
+
 //######################################################################
 
-class EmitCInlines final : EmitCBaseVisitor {
+class EmitCInlines final : EmitCBaseVisitorConst {
     // STATE
 
     // METHODS
 
     // VISITORS
-    virtual void visit(AstCNew* nodep) override {
+    void visit(AstCNew* nodep) override {
         if (v3Global.opt.savable())
             v3warn(E_UNSUPPORTED, "Unsupported: --savable with dynamic new");
-        iterateChildren(nodep);
+        iterateChildrenConst(nodep);
     }
-    virtual void visit(AstDumpCtl* nodep) override {
+    void visit(AstDumpCtl* nodep) override {
         if (v3Global.opt.trace()) v3Global.needTraceDumper(true);
-        iterateChildren(nodep);
+        iterateChildrenConst(nodep);
+    }
+    void visit(AstNodeDistBiop* nodep) override {
+        v3Global.setUsesProbDist();
+        iterateChildrenConst(nodep);
+    }
+    void visit(AstNodeDistTriop* nodep) override {
+        v3Global.setUsesProbDist();
+        iterateChildrenConst(nodep);
     }
 
     //---------------------------------------
-    virtual void visit(AstNode* nodep) override { iterateChildren(nodep); }
+    void visit(AstNode* nodep) override { iterateChildrenConst(nodep); }
 
 public:
-    explicit EmitCInlines(AstNetlist* nodep) { iterate(nodep); }
+    explicit EmitCInlines(AstNetlist* nodep) { iterateConst(nodep); }
 };
 
 //######################################################################
@@ -54,5 +64,5 @@ public:
 
 void V3EmitC::emitcInlines() {
     UINFO(2, __FUNCTION__ << ": " << endl);
-    EmitCInlines(v3Global.rootp());
+    { EmitCInlines{v3Global.rootp()}; }
 }

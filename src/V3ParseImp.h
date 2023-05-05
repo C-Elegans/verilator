@@ -6,7 +6,7 @@
 //
 //*************************************************************************
 //
-// Copyright 2009-2022 by Wilson Snyder. This program is free software; you
+// Copyright 2009-2023 by Wilson Snyder. This program is free software; you
 // can redistribute it and/or modify it under the terms of either the GNU
 // Lesser General Public License Version 3 or the Perl Artistic License
 // Version 2.0.
@@ -121,6 +121,7 @@ struct V3ParseBisonYYSType {
         V3ErrorCode::en errcodeen;
         VAttrType::en attrtypeen;
         VLifetime::en lifetime;
+        VStrength::en strength;
 
 #include "V3Ast__gen_yystype.h"
     };
@@ -141,7 +142,7 @@ class V3ParseImp final {
     static V3ParseImp* s_parsep;  // Current THIS, bison() isn't class based
     FileLine* m_lexFileline = nullptr;  // Filename/linenumber currently active for lexing
 
-    FileLine* m_bisonLastFileline;  // Filename/linenumber of last token
+    FileLine* m_bisonLastFileline = nullptr;  // Filename/linenumber of last token
 
     bool m_inLibrary = false;  // Currently reading a library vs. regular file
     int m_lexKwdDepth = 0;  // Inside a `begin_keywords
@@ -149,6 +150,7 @@ class V3ParseImp final {
     VOptionBool m_unconnectedDrive;  // Last unconnected drive
 
     int m_lexPrevToken = 0;  // previous parsed token (for lexer)
+    bool m_afterColonColon = false;  // The previous token was '::'
     std::deque<V3ParseBisonYYSType> m_tokensAhead;  // Tokens we parsed ahead of parser
 
     std::deque<string*> m_stringps;  // Created strings for later cleanup
@@ -160,24 +162,10 @@ class V3ParseImp final {
     VTimescale m_timeLastUnit;  // Last `timescale's unit
 
 public:
+    VL_DEFINE_DEBUG_FUNCTIONS;
     // Note these are an exception to using the filename as the debug type
-    static int debugBison() {
-        static int level = -1;
-        if (VL_UNLIKELY(level < 0)) level = v3Global.opt.debugSrcLevel("bison");
-        return level;
-    }
-    static int debugFlex() {
-        static int level = -1;
-        if (VL_UNLIKELY(level < 0)) level = v3Global.opt.debugSrcLevel("flex");
-        return level;
-    }
-    static int debug() {
-        static int level = -1;
-        if (VL_UNLIKELY(level < 0))
-            level = std::max(std::max(debugBison(), debugFlex()),
-                             v3Global.opt.debugSrcLevel("V3ParseImp"));
-        return level;
-    }
+    VL_DEFINE_DEBUG(Bison);  // Define 'unsigned debugBison()'
+    VL_DEFINE_DEBUG(Flex);  // Define 'unsigned debugFlex()'
 
     // Functions called by lex rules:
     int yylexThis();
@@ -215,6 +203,7 @@ public:
     }
     int lexKwdLastState() const { return m_lexKwdLast; }
     static const char* tokenName(int tok);
+    static bool isStrengthToken(int tok);
 
     void ppPushText(const string& text) {
         m_ppBuffers.push_back(text);
@@ -229,13 +218,13 @@ public:
     // These can be called by either parser or lexer, as not lex/parser-position aware
     string* newString(const string& text) {
         // Allocate a string, remembering it so we can reclaim storage at lex end
-        string* const strp = new string(text);
+        string* const strp = new std::string{text};
         m_stringps.push_back(strp);
         return strp;
     }
     string* newString(const char* text) {
         // Allocate a string, remembering it so we can reclaim storage at lex end
-        string* const strp = new string(text);
+        string* const strp = new std::string{text};
         m_stringps.push_back(strp);
         return strp;
     }
@@ -244,14 +233,14 @@ public:
         m_stringps.push_back(strp);
         return strp;
     }
-    V3Number* newNumber(FileLine* fl, const char* text) {
-        V3Number* nump = new V3Number(V3Number::FileLined(), fl, text);
+    V3Number* newNumber(FileLine* flp, const char* text) {
+        V3Number* nump = new V3Number{flp, text};
         m_numberps.push_back(nump);
         return nump;
     }
 
     // Bison sometimes needs error context without a token, so remember last token's line
-    // Only use this if do not have and cannot get a token-relevent fileline
+    // Only use this if do not have and cannot get a token-relevant fileline
     FileLine* bisonLastFileline() const { return m_bisonLastFileline; }
 
     // Return next token, for bison, since bison isn't class based, use a global THIS
@@ -273,7 +262,7 @@ public:
 
     //==== Symbol tables
     V3ParseSym* symp() { return m_symp; }
-    AstPackage* unitPackage(FileLine* fl) {
+    AstPackage* unitPackage(FileLine* /*fl*/) {
         // Find one made earlier?
         const VSymEnt* const rootSymp
             = symp()->symRootp()->findIdFlat(AstPackage::dollarUnitName());
@@ -314,6 +303,7 @@ private:
     void tokenPipeline();  // Internal; called from tokenToBison
     void tokenPipelineSym();
     size_t tokenPipeScanParam(size_t depth);
+    size_t tokenPipeScanType(size_t depth);
     const V3ParseBisonYYSType* tokenPeekp(size_t depth);
     void preprocDumps(std::ostream& os);
 };

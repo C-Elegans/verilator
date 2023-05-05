@@ -6,7 +6,7 @@
 //
 //*************************************************************************
 //
-// Copyright 2003-2022 by Wilson Snyder. This program is free software; you
+// Copyright 2003-2023 by Wilson Snyder. This program is free software; you
 // can redistribute it and/or modify it under the terms of either the GNU
 // Lesser General Public License Version 3 or the Perl Artistic License
 // Version 2.0.
@@ -23,9 +23,12 @@
 #include "config_build.h"
 #include "verilatedos.h"
 
-#include "V3Global.h"
 #include "V3Class.h"
+
 #include "V3Ast.h"
+#include "V3Global.h"
+
+VL_DEFINE_DEBUG_FUNCTIONS;
 
 //######################################################################
 
@@ -38,6 +41,7 @@ private:
 
     // MEMBERS
     string m_prefix;  // String prefix to add to name based on hier
+    AstNodeModule* m_modp = nullptr;  // Current module
     AstNodeModule* m_classPackagep = nullptr;  // Package moving into
     const AstScope* m_classScopep = nullptr;  // Package moving scopes into
     AstScope* m_packageScopep = nullptr;  // Class package scope
@@ -46,14 +50,13 @@ private:
     std::vector<std::pair<AstNode*, AstNodeModule*>> m_toPackageMoves;
 
     // METHODS
-    VL_DEBUG_FUNC;  // Declare debug()
 
-    virtual void visit(AstClass* nodep) override {
+    void visit(AstClass* nodep) override {
         if (nodep->user1SetOnce()) return;
         // Move this class
         nodep->name(m_prefix + nodep->name());
         nodep->unlinkFrBack();
-        v3Global.rootp()->addModulep(nodep);
+        v3Global.rootp()->addModulesp(nodep);
         // Make containing package
         // Note origName is the same as the class origName so errors look correct
         AstClassPackage* const packagep
@@ -61,7 +64,7 @@ private:
         packagep->name(nodep->name() + "__Vclpkg");
         nodep->classOrPackagep(packagep);
         packagep->classp(nodep);
-        v3Global.rootp()->addModulep(packagep);
+        v3Global.rootp()->addModulesp(packagep);
         // Add package to hierarchy
         AstCell* const cellp = new AstCell{packagep->fileline(),
                                            packagep->fileline(),
@@ -71,7 +74,7 @@ private:
                                            nullptr,
                                            nullptr};
         cellp->modp(packagep);
-        v3Global.rootp()->topModulep()->addStmtp(cellp);
+        v3Global.rootp()->topModulep()->addStmtsp(cellp);
         // Find class's scope
         // Alternative would be to move this and related to V3Scope
         const AstScope* classScopep = nullptr;
@@ -84,13 +87,15 @@ private:
         AstScope* const scopep
             = new AstScope{nodep->fileline(), packagep, classScopep->name(),
                            classScopep->aboveScopep(), classScopep->aboveCellp()};
-        packagep->addStmtp(scopep);
+        packagep->addStmtsp(scopep);
         // Iterate
         VL_RESTORER(m_prefix);
         VL_RESTORER(m_classPackagep);
         VL_RESTORER(m_classScopep);
         VL_RESTORER(m_packageScopep);
+        VL_RESTORER(m_modp);
         {
+            m_modp = nodep;
             m_classPackagep = packagep;
             m_classScopep = classScopep;
             m_packageScopep = scopep;
@@ -99,89 +104,126 @@ private:
         }
         nodep->repairCache();
     }
-    virtual void visit(AstNodeModule* nodep) override {
+    void visit(AstNodeModule* nodep) override {
         // Visit for NodeModules that are not AstClass (AstClass is-a AstNodeModule)
         VL_RESTORER(m_prefix);
+        VL_RESTORER(m_modp);
         {
+            m_modp = nodep;
             m_prefix = nodep->name() + "__03a__03a";  // ::
             iterateChildren(nodep);
         }
     }
 
-    virtual void visit(AstVar* nodep) override {
+    void visit(AstVar* nodep) override {
         iterateChildren(nodep);
         if (m_packageScopep) {
             if (m_ftaskp && m_ftaskp->lifetime().isStatic()) {
-                // Move later, or we wouldn't keep interating the class
+                // Move later, or we wouldn't keep iterating the class
                 // We're really moving the VarScope but we might not
                 // have a pointer to it yet
-                m_toScopeMoves.push_back(std::make_pair(nodep, m_packageScopep));
+                m_toScopeMoves.emplace_back(std::make_pair(nodep, m_packageScopep));
             }
             if (!m_ftaskp && nodep->lifetime().isStatic()) {
-                m_toPackageMoves.push_back(std::make_pair(nodep, m_classPackagep));
+                m_toPackageMoves.emplace_back(std::make_pair(nodep, m_classPackagep));
                 // We're really moving the VarScope but we might not
                 // have a pointer to it yet
-                m_toScopeMoves.push_back(std::make_pair(nodep, m_packageScopep));
+                m_toScopeMoves.emplace_back(std::make_pair(nodep, m_packageScopep));
             }
         }
     }
 
-    virtual void visit(AstVarScope* nodep) override {
+    void visit(AstVarScope* nodep) override {
         iterateChildren(nodep);
         nodep->varp()->user1p(nodep);
     }
 
-    virtual void visit(AstNodeFTask* nodep) override {
+    void visit(AstNodeFTask* nodep) override {
         VL_RESTORER(m_ftaskp);
         {
             m_ftaskp = nodep;
             iterateChildren(nodep);
             if (m_packageScopep && nodep->lifetime().isStatic()) {
-                m_toScopeMoves.push_back(std::make_pair(nodep, m_packageScopep));
+                m_toScopeMoves.emplace_back(std::make_pair(nodep, m_packageScopep));
             }
         }
     }
-    virtual void visit(AstCFunc* nodep) override {
+    void visit(AstCFunc* nodep) override {
         iterateChildren(nodep);
-        // Don't move now, or wouldn't keep interating the class
+        // Don't move now, or wouldn't keep iterating the class
         // TODO move function statics only
         // if (m_classScopep) {
         //    m_toScopeMoves.push_back(std::make_pair(nodep, m_classScopep));
         //}
     }
-    virtual void visit(AstInitial* nodep) override {
-        // But not AstInitialAutomatic, which remains under the class
+    void visit(AstCoverDecl* nodep) override {
+        // Need to declare coverage in package, where we have access to symbol table
         iterateChildren(nodep);
-        if (m_packageScopep) { m_toScopeMoves.push_back(std::make_pair(nodep, m_packageScopep)); }
+        if (m_classPackagep) m_classPackagep->addStmtsp(nodep->unlinkFrBack());
     }
-    virtual void visit(AstInitialStatic* nodep) override {
+    void visit(AstInitial* nodep) override {
         // But not AstInitialAutomatic, which remains under the class
         iterateChildren(nodep);
-        if (m_packageScopep) { m_toScopeMoves.push_back(std::make_pair(nodep, m_packageScopep)); }
+        if (m_packageScopep) {
+            m_toScopeMoves.emplace_back(std::make_pair(nodep, m_packageScopep));
+        }
+    }
+    void visit(AstInitialStatic* nodep) override {
+        // But not AstInitialAutomatic, which remains under the class
+        iterateChildren(nodep);
+        if (m_packageScopep) {
+            m_toScopeMoves.emplace_back(std::make_pair(nodep, m_packageScopep));
+        }
     }
 
-    virtual void visit(AstNodeMath* nodep) override {}  // Short circuit
-    virtual void visit(AstNodeStmt* nodep) override {}  // Short circuit
-    virtual void visit(AstNode* nodep) override { iterateChildren(nodep); }
+    void setStructModulep(AstNodeUOrStructDType* const dtypep) {
+        // Give it a pointer to its package and a final name
+        dtypep->classOrPackagep(m_classPackagep ? m_classPackagep : m_modp);
+        dtypep->name(dtypep->name() + (VN_IS(dtypep, UnionDType) ? "__union" : "__struct")
+                     + cvtToStr(dtypep->uniqueNum()));
+
+        for (const AstMemberDType* itemp = dtypep->membersp(); itemp;
+             itemp = VN_AS(itemp->nextp(), MemberDType)) {
+            AstNodeUOrStructDType* const subp = VN_CAST(itemp->skipRefp(), NodeUOrStructDType);
+            // Recurse only into anonymous unpacked structs inside this definition,
+            // other unpacked structs will be reached from another typedefs
+            if (subp && !subp->packed() && subp->name().empty()) setStructModulep(subp);
+        }
+    }
+    void visit(AstTypedef* nodep) override {
+        if (nodep->user1SetOnce()) return;
+        iterateChildren(nodep);
+        if (m_classPackagep) m_classPackagep->addStmtsp(nodep->unlinkFrBack());
+
+        AstNodeUOrStructDType* const dtypep = VN_CAST(nodep->dtypep(), NodeUOrStructDType);
+        if (dtypep && !dtypep->packed()) {
+            dtypep->name(nodep->name());
+            setStructModulep(dtypep);
+        }
+    }
+
+    void visit(AstNodeExpr* nodep) override {}  // Short circuit
+    void visit(AstNodeStmt* nodep) override {}  // Short circuit
+    void visit(AstNode* nodep) override { iterateChildren(nodep); }
 
 public:
     // CONSTRUCTORS
     explicit ClassVisitor(AstNetlist* nodep) { iterate(nodep); }
-    virtual ~ClassVisitor() override {
+    ~ClassVisitor() override {
         for (auto moved : m_toScopeMoves) {
             AstNode* const nodep = moved.first;
             AstScope* const scopep = moved.second;
             UINFO(9, "moving " << nodep << " to " << scopep << endl);
             if (VN_IS(nodep, NodeFTask)) {
-                scopep->addActivep(nodep->unlinkFrBack());
+                scopep->addBlocksp(nodep->unlinkFrBack());
             } else if (VN_IS(nodep, Var)) {
                 AstVarScope* const vscp = VN_AS(nodep->user1p(), VarScope);
                 vscp->scopep(scopep);
                 vscp->unlinkFrBack();
-                scopep->addVarp(vscp);
+                scopep->addVarsp(vscp);
             } else if (VN_IS(nodep, Initial) || VN_IS(nodep, InitialStatic)) {
                 nodep->unlinkFrBack();
-                scopep->addActivep(nodep);
+                scopep->addBlocksp(nodep);
             } else {
                 nodep->v3fatalSrc("Bad case");
             }
@@ -191,7 +233,7 @@ public:
             AstNodeModule* const modp = moved.second;
             UINFO(9, "moving " << nodep << " to " << modp << endl);
             nodep->unlinkFrBack();
-            modp->addStmtp(nodep);
+            modp->addStmtsp(nodep);
         }
     }
 };
@@ -202,5 +244,5 @@ public:
 void V3Class::classAll(AstNetlist* nodep) {
     UINFO(2, __FUNCTION__ << ": " << endl);
     { ClassVisitor{nodep}; }  // Destruct before checking
-    V3Global::dumpCheckGlobalTree("class", 0, v3Global.opt.dumpTreeLevel(__FILE__) >= 3);
+    V3Global::dumpCheckGlobalTree("class", 0, dumpTreeLevel() >= 3);
 }

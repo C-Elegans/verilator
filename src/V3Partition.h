@@ -6,7 +6,7 @@
 //
 //*************************************************************************
 //
-// Copyright 2003-2022 by Wilson Snyder. This program is free software; you
+// Copyright 2003-2023 by Wilson Snyder. This program is free software; you
 // can redistribute it and/or modify it under the terms of either the GNU
 // Lesser General Public License Version 3 or the Perl Artistic License
 // Version 2.0.
@@ -22,6 +22,7 @@
 
 #include "V3Graph.h"
 #include "V3OrderGraph.h"
+#include "V3OrderMoveGraph.h"
 
 #include <list>
 #include <unordered_map>
@@ -37,11 +38,13 @@ using Vx2MTaskMap = std::unordered_map<const MTaskMoveVertex*, LogicMTask*>;
 
 class V3Partition final {
     // MEMBERS
-    V3Graph* const m_fineDepsGraphp;  // Fine-grained dependency graph
+    const OrderGraph* const m_orderGraphp;  // The OrderGraph
+    const V3Graph* const m_fineDepsGraphp;  // Fine-grained dependency graph
 public:
     // CONSTRUCTORS
-    explicit V3Partition(V3Graph* fineDepsGraphp)
-        : m_fineDepsGraphp{fineDepsGraphp} {}
+    explicit V3Partition(const OrderGraph* orderGraphp, const V3Graph* fineDepsGraphp)
+        : m_orderGraphp{orderGraphp}
+        , m_fineDepsGraphp{fineDepsGraphp} {}
     ~V3Partition() = default;
 
     // METHODS
@@ -65,9 +68,8 @@ public:
     static void finalize(AstNetlist* netlistp);
 
 private:
-    static void setupMTaskDeps(V3Graph* mtasksp, const Vx2MTaskMap* vx2mtaskp);
+    uint32_t setupMTaskDeps(V3Graph* mtasksp);
 
-    VL_DEBUG_FUNC;  // Declare debug()
     VL_UNCOPYABLE(V3Partition);
 };
 

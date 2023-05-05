@@ -1,4 +1,4 @@
-.. Copyright 2003-2022 by Wilson Snyder.
+.. Copyright 2003-2023 by Wilson Snyder.
 .. SPDX-License-Identifier: LGPL-3.0-only OR Artistic-2.0
 
 .. _Installation:
@@ -16,14 +16,14 @@ Package Manager Quick Install
 
 Using a distribution's package manager is the easiest way to get
 started. (Note packages are unlikely to have the most recent version, so
-:ref:`Git Install`, might be a better alternative.) To install as a
+:ref:`Git Install` might be a better alternative.) To install as a
 package:
 
 ::
 
    apt-get install verilator   # On Ubuntu
 
-For other distributions refer to `Repology Verilator Distro Packages
+For other distributions, refer to `Repology Verilator Distro Packages
 <https://repology.org/project/verilator>`__.
 
 .. _Git Install:
@@ -31,15 +31,15 @@ For other distributions refer to `Repology Verilator Distro Packages
 Git Quick Install
 =================
 
-Installing Verilator from Git provides the most flexibility. For additional
-options and details see :ref:`Detailed Build Instructions` below.
+Installing Verilator from Git provides the most flexibility; for additional
+options and details, see :ref:`Detailed Build Instructions` below.
 
 In brief, to install from git:
 
 ::
 
    # Prerequisites:
-   #sudo apt-get install git perl python3 make autoconf g++ flex bison ccache
+   #sudo apt-get install git help2man perl python3 make autoconf g++ flex bison ccache
    #sudo apt-get install libgoogle-perftools-dev numactl perl-doc
    #sudo apt-get install libfl2  # Ubuntu only (ignore if gives error)
    #sudo apt-get install libfl-dev  # Ubuntu only (ignore if gives error)
@@ -68,7 +68,7 @@ In brief, to install from git:
 Detailed Build Instructions
 ===========================
 
-This section describes details of the build process, and assumes you are
+This section describes details of the build process and assumes you are
 building from Git. For using a pre-built binary for your Linux
 distribution, see instead :ref:`Package Manager Quick Install`.
 
@@ -77,11 +77,11 @@ OS Requirements
 ---------------
 
 Verilator is developed and has primary testing on Ubuntu, with additional
-testing on FreeBSD and Apple OS-X. Versions have also built on Red Hat
-Linux, and other flavors of GNU/Linux-ish platforms. Verilator also works
-on Windows Subsystem for Linux (WSL2), Windows under Cygwin, and Windows
-under MinGW (gcc -mno-cygwin). Verilated output (not Verilator itself)
-compiles under all the options above, plus using MSVC++.
+testing on FreeBSD and Apple OS-X. Versions have also been built on Red Hat
+Linux, other flavors of GNU/Linux-ish platforms, Windows Subsystem for
+Linux (WSL2), Windows under Cygwin, and Windows under MinGW (gcc
+-mno-cygwin). Verilated output (not Verilator itself) compiles under all
+the options above, plus using MSVC++.
 
 
 Install Prerequisites
@@ -91,7 +91,7 @@ To build or run Verilator, you need these standard packages:
 
 ::
 
-   sudo apt-get install git perl python3 make
+   sudo apt-get install git help2man perl python3 make
    sudo apt-get install g++  # Alternatively, clang
    sudo apt-get install libgz  # Non-Ubuntu (ignore if gives error)
    sudo apt-get install libfl2  # Ubuntu only (ignore if gives error)
@@ -124,9 +124,9 @@ Those developing Verilator itself may also want these (see internals.rst):
 
 ::
 
-   sudo apt-get install gdb graphviz cmake clang clang-format-11 gprof lcov
-   sudo apt-get install yapf3
-   sudo pip3 install sphinx sphinx_rtd_theme sphinxcontrib-spelling breathe
+   sudo apt-get install gdb graphviz cmake clang clang-format-14 gprof lcov
+   sudo apt-get install libclang-dev yapf3
+   sudo pip3 install clang sphinx sphinx_rtd_theme sphinxcontrib-spelling breathe
    cpan install Pod::Perldoc
    cpan install Parallel::Forker
 
@@ -150,16 +150,18 @@ To make use of Verilator FST tracing you will want `GTKwave
 required at Verilator build time.
 
 
+.. _Obtain Sources:
+
 Obtain Sources
 --------------
 
-Get the sources from the git repository: (You need do this only once,
+Get the sources from the git repository: (You need to do this only once,
 ever.)
 
 ::
 
    git clone https://github.com/verilator/verilator   # Only first time
-   ## Note the URL above is not a page you can see with a browser, it's for git only
+   ## Note the URL above is not a page you can see with a browser; it's for git only
 
 Enter the checkout and determine what version/branch to use:
 
@@ -186,7 +188,7 @@ Create the configuration script:
 Eventual Installation Options
 -----------------------------
 
-Before configuring the build, you have to decide how you're going to
+Before configuring the build, you must decide how you're going to
 eventually install Verilator onto your system. Verilator will be compiling
 the current value of the environment variables :option:`VERILATOR_ROOT`,
 :option:`SYSTEMC_INCLUDE`, and :option:`SYSTEMC_LIBDIR` as defaults into
@@ -220,8 +222,8 @@ the path to all needed files.
 
 You may eventually be installing onto a project/company-wide "CAD" tools
 disk that may support multiple versions of every tool. Tell configure the
-eventual destination directory name.  We recommend the destination location
-include the Verilator version name:
+eventual destination directory name.  We recommend that the destination
+location include the Verilator version name:
 
 ::
 
@@ -255,7 +257,7 @@ as most GNU tools support:
    unsetenv VERILATOR_ROOT   # if your shell is csh
    ./configure --prefix /opt/verilator-VERSION
 
-Then after installing (below steps) you will need to add
+Then after installing (below steps), you will need to add
 ``/opt/verilator-VERSION/bin`` to your ``$PATH`` environment variable.
 
 
@@ -271,7 +273,7 @@ configure's default system paths:
    unsetenv VERILATOR_ROOT   # if your shell is csh
    ./configure
 
-Then after installing (below) the binaries should be in a location that is
+Then after installing (below), the binaries should be in a location
 already in your ``$PATH`` environment variable.
 
 

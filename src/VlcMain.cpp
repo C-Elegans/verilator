@@ -6,7 +6,7 @@
 //
 //*************************************************************************
 //
-// Copyright 2003-2022 by Wilson Snyder. This program is free software; you
+// Copyright 2003-2023 by Wilson Snyder. This program is free software; you
 // can redistribute it and/or modify it under the terms of either the GNU
 // Lesser General Public License Version 3 or the Perl Artistic License
 // Version 2.0.
@@ -23,14 +23,18 @@
 
 #include "verilatedos.h"
 
-// Cheat for speed and compile .cpp files into one object
+// Cheat for speed and compile .cpp files into one object TODO: Reconsider
 #define V3ERROR_NO_GLOBAL_
+#include "V3Error.h"
+static int debug() { return V3Error::debugDefault(); }
 #include "V3Error.cpp"
 #include "V3String.cpp"
 #define V3OPTION_PARSER_NO_VOPTION_BOOL
+// clang-format off
 #include "V3OptionParser.cpp"
 #include "V3Os.cpp"
 #include "VlcTop.cpp"
+// clang-format on
 
 #include "VlcOptions.h"
 #include "VlcTop.h"
@@ -54,13 +58,14 @@ void VlcOptions::parseOptsList(int argc, char** argv) {
     V3OptionParser::AppendHelper DECL_OPTION{parser};
     V3OPTION_PARSER_DECL_TAGS;
 
-    DECL_OPTION("-annotate-all", OnOff, &m_annotateAll);
-    DECL_OPTION("-rank", OnOff, &m_rank);
-    DECL_OPTION("-unlink", OnOff, &m_unlink);
-    DECL_OPTION("-annotate-min", Set, &m_annotateMin);
     DECL_OPTION("-annotate", Set, &m_annotateOut);
+    DECL_OPTION("-annotate-all", OnOff, &m_annotateAll);
+    DECL_OPTION("-annotate-min", Set, &m_annotateMin);
+    DECL_OPTION("-annotate-points", OnOff, &m_annotatePoints);
     DECL_OPTION("-debug", CbCall, []() { V3Error::debugDefault(3); });
     DECL_OPTION("-debugi", CbVal, [](int v) { V3Error::debugDefault(v); });
+    DECL_OPTION("-rank", OnOff, &m_rank);
+    DECL_OPTION("-unlink", OnOff, &m_unlink);
     DECL_OPTION("-V", CbCall, []() {
         showVersion(true);
         std::exit(0);
@@ -98,7 +103,7 @@ void VlcOptions::showVersion(bool verbose) {
     if (!verbose) return;
 
     cout << endl;
-    cout << "Copyright 2003-2022 by Wilson Snyder.  Verilator is free software; you can\n";
+    cout << "Copyright 2003-2023 by Wilson Snyder.  Verilator is free software; you can\n";
     cout << "redistribute it and/or modify the Verilator internals under the terms of\n";
     cout << "either the GNU Lesser General Public License Version 3 or the Perl Artistic\n";
     cout << "License Version 2.0.\n";
@@ -109,7 +114,7 @@ void VlcOptions::showVersion(bool verbose) {
 
 //######################################################################
 
-int main(int argc, char** argv, char** /*env*/) {
+int main(int argc, char** argv) {
     // General initialization
     std::ios::sync_with_stdio();
 

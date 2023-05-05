@@ -6,7 +6,7 @@
 //
 //*************************************************************************
 //
-// Copyright 2004-2022 by Wilson Snyder. This program is free software; you
+// Copyright 2004-2023 by Wilson Snyder. This program is free software; you
 // can redistribute it and/or modify it under the terms of either the GNU
 // Lesser General Public License Version 3 or the Perl Artistic License
 // Version 2.0.
@@ -32,7 +32,8 @@ class VSpellCheck;
 class V3PreShell final {
     // Static class for calling preprocessor
 public:
-    static void boot(char** env);
+    static void boot();
+    static void shutdown();
     static bool preproc(FileLine* fl, const string& modname, VInFilter* filterp,
                         V3ParseImp* parsep, const string& errmsg);
     static void preprocInclude(FileLine* fl, const string& modname);

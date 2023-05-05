@@ -6,7 +6,7 @@
 //
 //*************************************************************************
 //
-// Copyright 2003-2022 by Wilson Snyder. This program is free software; you
+// Copyright 2003-2023 by Wilson Snyder. This program is free software; you
 // can redistribute it and/or modify it under the terms of either the GNU
 // Lesser General Public License Version 3 or the Perl Artistic License
 // Version 2.0.
@@ -23,6 +23,8 @@
 #include <algorithm>
 #include <list>
 #include <vector>
+
+VL_DEFINE_DEBUG_FUNCTIONS;
 
 //######################################################################
 //######################################################################
@@ -42,13 +44,13 @@ public:
     GraphAcycVertex(V3Graph* graphp, V3GraphVertex* origVertexp)
         : V3GraphVertex{graphp}
         , m_origVertexp{origVertexp} {}
-    virtual ~GraphAcycVertex() override = default;
+    ~GraphAcycVertex() override = default;
     V3GraphVertex* origVertexp() const { return m_origVertexp; }
     void setDelete() { m_deleted = true; }
     bool isDelete() const { return m_deleted; }
-    virtual string name() const override { return m_origVertexp->name(); }
-    virtual string dotColor() const override { return m_origVertexp->dotColor(); }
-    virtual FileLine* fileline() const override { return m_origVertexp->fileline(); }
+    string name() const override { return m_origVertexp->name(); }
+    string dotColor() const override { return m_origVertexp->dotColor(); }
+    FileLine* fileline() const override { return m_origVertexp->fileline(); }
 };
 
 //--------------------------------------------------------------------
@@ -67,11 +69,9 @@ public:
     GraphAcycEdge(V3Graph* graphp, V3GraphVertex* fromp, V3GraphVertex* top, int weight,
                   bool cutable = false)
         : V3GraphEdge{graphp, fromp, top, weight, cutable} {}
-    virtual ~GraphAcycEdge() override = default;
+    ~GraphAcycEdge() override = default;
     // yellow=we might still cut it, else oldEdge: yellowGreen=made uncutable, red=uncutable
-    virtual string dotColor() const override {
-        return (cutable() ? "yellow" : origEdgep()->dotColor());
-    }
+    string dotColor() const override { return (cutable() ? "yellow" : origEdgep()->dotColor()); }
 };
 
 //--------------------------------------------------------------------
@@ -106,8 +106,6 @@ private:
         m_origEdgeFuncp;  // Function that says we follow this edge (in original graph)
     uint32_t m_placeStep = 0;  // Number that user() must be equal to to indicate processing
 
-    static int debug() { return V3Graph::debug(); }
-
     // METHODS
     void buildGraph(V3Graph* origGraphp);
     void buildGraphIterate(V3GraphVertex* overtexp, GraphAcycVertex* avertexp);
@@ -123,13 +121,13 @@ private:
     void placeTryEdge(V3GraphEdge* edgep);
     bool placeIterate(GraphAcycVertex* vertexp, uint32_t currentRank);
 
-    inline bool origFollowEdge(V3GraphEdge* edgep) {
+    bool origFollowEdge(V3GraphEdge* edgep) {
         return (edgep->weight() && (m_origEdgeFuncp)(edgep));
     }
     V3GraphEdge* edgeFromEdge(V3GraphEdge* oldedgep, V3GraphVertex* fromp, V3GraphVertex* top) {
         // Make new breakGraph edge, with old edge as a template
-        GraphAcycEdge* const newEdgep = new GraphAcycEdge(&m_breakGraph, fromp, top,
-                                                          oldedgep->weight(), oldedgep->cutable());
+        GraphAcycEdge* const newEdgep = new GraphAcycEdge{&m_breakGraph, fromp, top,
+                                                          oldedgep->weight(), oldedgep->cutable()};
         newEdgep->userp(oldedgep->userp());  // Keep pointer to OrigEdgeList
         return newEdgep;
     }
@@ -205,7 +203,7 @@ void GraphAcyc::buildGraph(V3Graph* origGraphp) {
     for (V3GraphVertex* overtexp = origGraphp->verticesBeginp(); overtexp;
          overtexp = overtexp->verticesNextp()) {
         if (overtexp->color()) {
-            GraphAcycVertex* const avertexp = new GraphAcycVertex(&m_breakGraph, overtexp);
+            GraphAcycVertex* const avertexp = new GraphAcycVertex{&m_breakGraph, overtexp};
             overtexp->userp(avertexp);  // Stash so can look up later
         }
     }
@@ -230,8 +228,8 @@ void GraphAcyc::buildGraphIterate(V3GraphVertex* overtexp, GraphAcycVertex* aver
                     = static_cast<GraphAcycVertex*>(toVertexp->userp());
                 // Replicate the old edge into the new graph
                 // There may be multiple edges between same pairs of vertices
-                V3GraphEdge* breakEdgep = new GraphAcycEdge(&m_breakGraph, avertexp, toAVertexp,
-                                                            edgep->weight(), edgep->cutable());
+                V3GraphEdge* breakEdgep = new GraphAcycEdge{&m_breakGraph, avertexp, toAVertexp,
+                                                            edgep->weight(), edgep->cutable()};
                 addOrigEdgep(breakEdgep, edgep);  // So can find original edge
             }
         }
@@ -347,7 +345,7 @@ void GraphAcyc::simplifyOut(GraphAcycVertex* avertexp) {
                 nextp = inEdgep->inNextp();
                 V3GraphVertex* inVertexp = inEdgep->fromp();
                 if (inVertexp == avertexp) {
-                    if (debug()) v3error("Non-cutable edge forms a loop, vertex=" << avertexp);
+                    if (debug()) v3error("Non-cutable vertex=" << avertexp);  // LCOV_EXCL_LINE
                     v3error("Circular logic when ordering code (non-cutable edge loop)");
                     m_origGraphp->reportLoops(
                         &V3GraphEdge::followNotCutable,
@@ -546,28 +544,28 @@ void GraphAcyc::main() {
     // edges (and thus can't represent loops - if we did the unbreakable
     // marking right, anyways)
     buildGraph(m_origGraphp);
-    if (debug() >= 6) m_breakGraph.dumpDotFilePrefixed("acyc_pre");
+    if (dumpGraphLevel() >= 6) m_breakGraph.dumpDotFilePrefixed("acyc_pre");
 
     // Perform simple optimizations before any cuttings
     simplify(false);
-    if (debug() >= 5) m_breakGraph.dumpDotFilePrefixed("acyc_simp");
+    if (dumpGraphLevel() >= 5) m_breakGraph.dumpDotFilePrefixed("acyc_simp");
 
     UINFO(4, " Cutting trivial loops\n");
     simplify(true);
-    if (debug() >= 6) m_breakGraph.dumpDotFilePrefixed("acyc_mid");
+    if (dumpGraphLevel() >= 6) m_breakGraph.dumpDotFilePrefixed("acyc_mid");
 
     UINFO(4, " Ranking\n");
     m_breakGraph.rank(&V3GraphEdge::followNotCutable);
-    if (debug() >= 6) m_breakGraph.dumpDotFilePrefixed("acyc_rank");
+    if (dumpGraphLevel() >= 6) m_breakGraph.dumpDotFilePrefixed("acyc_rank");
 
     UINFO(4, " Placement\n");
     place();
-    if (debug() >= 6) m_breakGraph.dumpDotFilePrefixed("acyc_place");
+    if (dumpGraphLevel() >= 6) m_breakGraph.dumpDotFilePrefixed("acyc_place");
 
     UINFO(4, " Final Ranking\n");
     // Only needed to assert there are no loops in completed graph
     m_breakGraph.rank(&V3GraphEdge::followAlwaysTrue);
-    if (debug() >= 6) m_breakGraph.dumpDotFilePrefixed("acyc_done");
+    if (dumpGraphLevel() >= 6) m_breakGraph.dumpDotFilePrefixed("acyc_done");
 }
 
 void V3Graph::acyclic(V3EdgeFuncP edgeFuncp) {

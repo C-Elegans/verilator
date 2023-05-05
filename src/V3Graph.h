@@ -6,7 +6,7 @@
 //
 //*************************************************************************
 //
-// Copyright 2003-2022 by Wilson Snyder. This program is free software; you
+// Copyright 2003-2023 by Wilson Snyder. This program is free software; you
 // can redistribute it and/or modify it under the terms of either the GNU
 // Lesser General Public License Version 3 or the Perl Artistic License
 // Version 2.0.
@@ -54,26 +54,26 @@ public:
         //          // an array dimension or loop bound.
     };
     enum en m_e;
-    inline GraphWay()
+    GraphWay()
         : m_e{FORWARD} {}
     // cppcheck-suppress noExplicitConstructor
-    inline GraphWay(en _e)
+    constexpr GraphWay(en _e)
         : m_e{_e} {}
-    explicit inline GraphWay(int _e)
+    explicit constexpr GraphWay(int _e)
         : m_e(static_cast<en>(_e)) {}  // Need () or GCC 4.8 false warning
-    operator en() const { return m_e; }
+    constexpr operator en() const { return m_e; }
     const char* ascii() const {
         static const char* const names[] = {"FORWARD", "REVERSE"};
         return names[m_e];
     }
     // METHODS unique to this class
-    GraphWay invert() const { return m_e == FORWARD ? REVERSE : FORWARD; }
-    bool forward() const { return m_e == FORWARD; }
-    bool reverse() const { return m_e != FORWARD; }
+    constexpr GraphWay invert() const { return GraphWay{m_e ^ 1}; }
+    constexpr bool forward() const { return m_e == FORWARD; }
+    constexpr bool reverse() const { return m_e != FORWARD; }
 };
-inline bool operator==(const GraphWay& lhs, const GraphWay& rhs) { return lhs.m_e == rhs.m_e; }
-inline bool operator==(const GraphWay& lhs, GraphWay::en rhs) { return lhs.m_e == rhs; }
-inline bool operator==(GraphWay::en lhs, const GraphWay& rhs) { return lhs == rhs.m_e; }
+constexpr bool operator==(const GraphWay& lhs, const GraphWay& rhs) { return lhs.m_e == rhs.m_e; }
+constexpr bool operator==(const GraphWay& lhs, GraphWay::en rhs) { return lhs.m_e == rhs; }
+constexpr bool operator==(GraphWay::en lhs, const GraphWay& rhs) { return lhs == rhs.m_e; }
 
 //============================================================================
 
@@ -81,7 +81,6 @@ class V3Graph VL_NOT_FINAL {
 private:
     // MEMBERS
     V3List<V3GraphVertex*> m_vertices;  // All vertices
-    static int s_debug;
 
 protected:
     friend class V3GraphVertex;
@@ -89,15 +88,13 @@ protected:
     friend class GraphAcyc;
     // METHODS
     double orderDFSIterate(V3GraphVertex* vertexp);
-    void dumpEdge(std::ostream& os, V3GraphVertex* vertexp, V3GraphEdge* edgep);
+    void dumpEdge(std::ostream& os, const V3GraphVertex* vertexp, const V3GraphEdge* edgep);
     void verticesUnlink() { m_vertices.reset(); }
     // ACCESSORS
-    static int debug();
 
 public:
     V3Graph();
     virtual ~V3Graph();
-    static void debug(int level) { s_debug = level; }
     virtual string dotRankDir() const { return "TB"; }  // rankdir for dot plotting
 
     // METHODS
@@ -118,7 +115,7 @@ public:
     /// (I.E. all loops will occur within each color, not between them.)
     void stronglyConnected(V3EdgeFuncP edgeFuncp);
 
-    /// Assign a ordering number to all vertexes in a tree.
+    /// Assign an ordering number to all vertexes in a tree.
     /// All nodes with no inputs will get rank 1
     void rank(V3EdgeFuncP edgeFuncp);
     void rank();
@@ -206,7 +203,7 @@ public:
     explicit V3GraphVertex(V3Graph* graphp);
     //! Clone copy constructor. Doesn't copy edges or user/userp.
     virtual V3GraphVertex* clone(V3Graph* graphp) const {
-        return new V3GraphVertex(graphp, *this);
+        return new V3GraphVertex{graphp, *this};
     }
     virtual ~V3GraphVertex() = default;
     void unlinkEdges(V3Graph* graphp);
@@ -251,8 +248,8 @@ public:
     V3GraphEdge* beginp(GraphWay way) const { return way.forward() ? outBeginp() : inBeginp(); }
     // METHODS
     /// Error reporting
-    void v3errorEnd(std::ostringstream& str) const;
-    void v3errorEndFatal(std::ostringstream& str) const;
+    void v3errorEnd(std::ostringstream& str) const VL_REQUIRES(V3Error::s().m_mutex);
+    void v3errorEndFatal(std::ostringstream& str) const VL_REQUIRES(V3Error::s().m_mutex);
     /// Edges are routed around this vertex to point from "from" directly to "to"
     void rerouteEdges(V3Graph* graphp);
     /// Find the edge connecting ap and bp, where bp is wayward from ap.
@@ -274,6 +271,7 @@ protected:
     friend class V3GraphVertex;
     friend class GraphAcyc;
     friend class GraphAcycEdge;
+
     V3ListEnt<V3GraphEdge*> m_outs;  // Next Outbound edge for same vertex (linked list)
     V3ListEnt<V3GraphEdge*> m_ins;  // Next Inbound edge for same vertex (linked list)
     //
@@ -306,7 +304,7 @@ public:
     }
     //! Clone copy constructor.  Doesn't copy existing vertices or user/userp.
     virtual V3GraphEdge* clone(V3Graph* graphp, V3GraphVertex* fromp, V3GraphVertex* top) const {
-        return new V3GraphEdge(graphp, fromp, top, *this);
+        return new V3GraphEdge{graphp, fromp, top, *this};
     }
     virtual ~V3GraphEdge() = default;
     // METHODS
@@ -320,6 +318,7 @@ public:
     }
     void unlinkDelete();
     V3GraphEdge* relinkFromp(V3GraphVertex* newFromp);
+    V3GraphEdge* relinkTop(V3GraphVertex* newTop);
     // ACCESSORS
     int weight() const { return m_weight; }
     void weight(int weight) { m_weight = weight; }
