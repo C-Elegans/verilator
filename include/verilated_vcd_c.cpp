@@ -488,19 +488,17 @@ void VerilatedVcd::declare(uint32_t code, const char* name, const char* wirep, b
             hiername += basename;
             basename = "";
         } else {
-            if('0' <= *cp && *cp <= '9')
+            if ('0' <= *cp && *cp <= '9')
                 basename += *cp;
-            else if('a' <= *cp && *cp <= 'z')
+            else if ('a' <= *cp && *cp <= 'z')
                 basename += *cp;
-            else if('A' <= *cp && *cp <= 'Z')
+            else if ('A' <= *cp && *cp <= 'Z')
                 basename += *cp;
-            else if(*cp == '.' || *cp == '_')
+            else if (*cp == '.' || *cp == '_')
                 basename += *cp;
-            else if(*cp == ':')
+            else if (*cp == ':')
                 basename += "__COLON__";
-            else {
-                basename += "x" + std::to_string((int)*cp);
-            }
+            else { basename += "x" + std::to_string((int)*cp); }
         }
     }
     hiername += "\t" + basename;
